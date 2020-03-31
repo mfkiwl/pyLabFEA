@@ -5,7 +5,7 @@ module pyLabMaterial.
 
 uses NumPy, SciPy, MatPlotLib and pyLabMaterial
 
-Version: 1.1 (2020-03-31)
+Version: 2.0 (2020-03-31)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, March 2020
 Email: alexander.hartmaier@rub.de
 distributed under GNU General Public License (GPLv3)'''

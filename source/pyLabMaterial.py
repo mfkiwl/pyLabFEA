@@ -5,7 +5,7 @@ module pyLabFEM.
 
 uses NumPy, MatPlotLib, sklearn and pyLabFEM
 
-Version: 1.1 (2020-03-31)
+Version: 2.0 (2020-03-31)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, March 2020
 Email: alexander.hartmaier@rub.de
 distributed under GNU General Public License (GPLv3)'''
@@ -550,7 +550,7 @@ class Material(object):
         self.drucker = drucker   # Drucker-Prager parameter: weight of hydrostatic stress
         self.Tresca = Tresca
     
-    def microstructure(self, texture_param=None, grain_size=None, grain_shape=None, porosity=None):
+    def microstructure(self, texture=None, grain_size=None, grain_shape=None, porosity=None):
         '''Define microstructural parameters of the material: crstallographic texture, grain size, grain shape
         and porosity.
         
@@ -565,7 +565,7 @@ class Material(object):
         porosity : float
             Porosity of the material
         '''
-        self.texture_param = texture_param
+        self.texture = texture
         self.grain_size = grain_size
         self.grain_shape = grain_shape
         self.porosity = porosity

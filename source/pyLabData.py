@@ -98,6 +98,45 @@ class Data(object):
     
         '''
         def __init__(self, db, name):
+            def prop_elastic():
+                '''calculate estimates for elastic properties E, nu associated to data set
+                Note: should be calculated from micromechnical data
+                '''
+                'select data points with eqiv. stress in range [0.1,0.4]sy'
+                seq = FE.seq_J2(self.sig)
+                ind = np.nonzero(np.logical_and(seq>0.1*self.sy, seq<0.4*self.sy))[0]
+                seq = FE.seq_J2(self.sig[ind])
+                eeq = FE.eps_eq(self.eel[ind])
+                self.E = np.average(seq/eeq)
+            
+                ssig = 1.e-2
+                seps = 1.e4
+                a = seps*self.eel[ind,:]
+                b = ssig*self.sig[ind,:]
+                x = np.linalg.lstsq(a, b, rcond=None)
+                c = x[0]*seps/ssig
+                self.C11 = c[0,0]
+                self.C12 = c[1,0]
+                self.C13 = c[2,0]
+                self.C21 = c[0,1]
+                self.C22 = c[1,1]
+                self.C23 = c[2,1]
+                self.C31 = c[0,2]
+                self.C32 = c[1,2]
+                self.C33 = c[2,2]
+                
+                #self.nu = self.C12/(self.C11 + self.C12) # estimate for isotropic materials
+                #self.E = self.C12*(1.+self.nu)*(1.-2.*self.nu)/self.nu
+                self.nu = 0.3
+                print('Estimated elasic constants: E=%5.2f GPa, nu=%4.2f' % (self.E/1000, self.nu))
+                print('Estimated elasic tensor C_ij (GPa): \n%8.2f, %8.2f, %8.2f' 
+                       % (self.C11/1000, self.C12/1000, self.C13/1000))
+                print('%8.2f, %8.2f, %8.2f' 
+                       % (self.C21/1000, self.C22/1000, self.C23/1000))
+                print('%8.2f, %8.2f, %8.2f' 
+                       % (self.C31/1000, self.C32/1000, self.C33/1000))
+                print('Residuals of fitting elastic parameters: ',x[1])
+            
             self.name = name
             self.db = db
             self.E = None
@@ -120,7 +159,8 @@ class Data(object):
             self.sig = AllData[sig_names].to_numpy()[::db.nth]
             self.ubc = AllData[ubc_names].to_numpy()[::db.nth]
             self.N = np.shape(self.sig)[0]
-            print(self.N,' data points imported into database ',db.name,' from ',name,)
+            print('\n***Microstructure ',self.name,' imported into database ',self.db.name)
+            print(self.N,' data points imported')
             
             'calculate eqiv. stresses and strains and theta values'
             sc_full   = FE.s_cyl(self.sig)   # transform stresses into cylindrical coordinates
@@ -157,6 +197,7 @@ class Data(object):
             for x in f:
                 print(x[0], x)
             '''
+            self.texture_param = int(self.name[-1])/2 - 1.
             
             'select data points close to yield point => raw data'
             ind  = np.nonzero(np.logical_and(peeq_full>db.epc-db.dep, peeq_full<db.epc+db.dep))[0]
@@ -164,12 +205,22 @@ class Data(object):
             peeq_raw = peeq_full[ind]
             self.Ndat = len(ind)
             self.sy = np.average(scyl_raw[:,0])  # calculate average yield point
-            print('Yield strength: %5.2f MPa, estimated from %i data sets' %(self.sy,self.Ndat))
+            print('Estimated yield strength: %5.2f MPa, from %i data sets with PEEQ approx. %5.3f' 
+                  %(self.sy,self.Ndat,db.epc))
+            prop_elastic()
+                
+            'define material'
+            self.mat = Material(name='ML-'+self.name)
+            self.mat.elasticity(E=self.E, nu=self.nu)
+            self.mat.plasticity(sy=self.sy)
+            self.mat.microstructure(texture=self.texture_param)
             
             'mirror stress data in theta space'
             sc2 = np.zeros((self.Ndat,2))
             sc2[:,0] = scyl_raw[:,0]
             sc2[:,1] = scyl_raw[:,1]-np.pi
+            ih = np.nonzero(sc2[:,1]<-np.pi)[0]
+            sc2[ih,1] += 2*np.pi
             
             'calculate associated load vector for boundary conditions'
             hs1 = self.sig[ind,:]   # mirrored stresses
@@ -200,7 +251,7 @@ class Data(object):
                     self.lc_.append(hh)
                     hh = []
                     uvec = self.ubc_[i,:]
-            print('Load cases: ',len(self.lc_))
+            print('Number of load cases: ',len(self.lc_))
 
             'calculate yield stress for each load case'
             hs = []
@@ -215,64 +266,17 @@ class Data(object):
                 'interpolated value of crit. equiv. stress at yield onset'
                 hs.append(self.sfc_[ind[iel[-1]],0] + (db.epc-self.peeq_[ind[iel[-1]]])*ds/de)   
                 ht.append(self.sfc_[ind[iel[-1]],1]) # polar angle of load case
+            ind = np.argsort(ht)   # sort w.r.t polar angle
             self.syc = np.zeros((self.Nlc,3))  # critical cylindrical stress tensor at yield onset
-            self.syc[:,0] = np.array(hs)
-            self.syc[:,1] = np.array(ht)
-            
-        def prop_elastic(self):
-            '''calculate estimates for elastic properties E, nu associated to data set
-            Note: should be calculated from micromechnical data
-            '''
-            'select data points with eqiv. stress in range [0.1,0.4]sy'
-            seq = FE.seq_J2(self.sig)
-            ind = np.nonzero(np.logical_and(seq>0.1*self.sy, seq<0.4*self.sy))[0]
-            seq = FE.seq_J2(self.sig[ind])
-            eeq = FE.eps_eq(self.eel[ind])
-            self.E = np.average(seq/eeq)
-            
-            print('Number', len(ind))
-            ssig = 1.e-2
-            seps = 1.e4
-            a = seps*self.eel[ind,:]
-            b = ssig*self.sig[ind,:]
-            x = np.linalg.lstsq(a, b, rcond=None)
-            c = x[0]*seps/ssig
-            self.C11 = c[0,0]
-            self.C12 = c[1,0]
-            self.C13 = c[2,0]
-            self.C21 = c[0,1]
-            self.C22 = c[1,1]
-            self.C23 = c[2,1]
-            self.C31 = c[0,2]
-            self.C32 = c[1,2]
-            self.C33 = c[2,2]
-            print('Residuals: ',x[1])
-            #self.nu = self.C12/(self.C11 + self.C12) # estimate for isotropic materials
-            #self.E = self.C12*(1.+self.nu)*(1.-2.*self.nu)/self.nu
-            self.nu = 0.3
-            print('***Microstructure ',self.name,' in database ',self.db.name)
-            print('Estimated elasic constants: E=%5.2f GPa, nu=%4.2f' % (self.E/1000, self.nu))
-            print('Estimated elasic tensor C_ij (GPa): \n%8.2f, %8.2f, %8.2f' 
-                   % (self.C11/1000, self.C12/1000, self.C13/1000))
-            print('%8.2f, %8.2f, %8.2f' 
-                   % (self.C21/1000, self.C22/1000, self.C23/1000))
-            print('%8.2f, %8.2f, %8.2f' 
-                   % (self.C31/1000, self.C32/1000, self.C33/1000))
+            self.syc[:,0] = np.array(hs)[ind]
+            self.syc[:,1] = np.array(ht)[ind]
                    
-        def augment_data(self, graph=True):
+        def augment_data(self, graph=False):
             '''Raw data is distributed over entire deviatoric plane to create a suited
             data set for training of SVC, graphical output of raw data together with 
             augmented data can be created.
             '''
-            if self.E is None:
-                self.prop_elastic()
-                
-            'define material'
-            self.mat = Material(name='ML-'+self.name)
-            self.mat.elasticity(E=self.E, nu=self.nu)
-            self.mat.plasticity(sy=self.sy)
-            self.mat.microstructure(texture=self.text_param)
-
+            
             'augment raw data and create result vector (yield function)'
             self.sc_train, self.yf_train = self.mat.create_sig_data(syc=self.syc, Nseq=25, extend=False)
             self.sc_test, self.yf_test   = self.mat.create_sig_data(syc=self.syc[0:self.Nlc:10,:])
@@ -281,9 +285,9 @@ class Data(object):
                 print('Plot raw data and training data extended over deviatoric plane for data set ',self.name)
                 fig, ax  = plt.subplots(nrows=1, ncols=1, figsize=(10,8))
                 Ncol = int(len(self.sc_train)/self.Nlc)
-                ax.scatter(self.sc_train[:,1], self.sc_train[:,0], s=20, c=self.yf_train, cmap=plt.cm.Paired)
-                #ax.scatter(self.sfc_[:,1], self.sfc_[:,0], s=20, c=self.f_yld_, cmap=plt.cm.Paired)
-                ax.plot(self.syc[:,1], self.syc[:,0], '-m')
+                ax.scatter(self.sc_train[:,1], self.sc_train[:,0], s=15, c=self.yf_train, cmap=plt.cm.Paired)
+                #ax.plot(self.sfc_[:,1], self.sfc_[:,0], '.y')
+                ax.plot(self.syc[:,1], self.syc[:,0], '-k')
                 ax.set_title('SVC yield function for data set '+self.name)
                 ax.set_xlabel(r'$\theta$ (rad)', fontsize=20)
                 ax.set_ylabel(r'$\sigma_{eq}$ (MPa)', fontsize=20)
@@ -324,7 +328,8 @@ class Data(object):
             yield function ("-1": elastic, "+1": plastic). Furthermore, axes in different dimensions for microstructural
             features are introduced that describe the relation between the different sets.
             '''
-            
+            for set in self.set:
+                set.augment_data()   # create training data in entire deviatoric stress plane from raw data
             train_sc, test_sc = mat_ml.setup_yf_SVM(xt, yt, cyl=True, C=10, gamma=4., fs=0.25, plot=True)   
 
             print('\n-------------------------\n')

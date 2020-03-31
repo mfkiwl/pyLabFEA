@@ -20,7 +20,7 @@ take the microstructure of a material into account when defining its mechanical
 properties. This branch is still under construction. Please refer to the documentation 
 in the master branch.
 
-# Documentation
+## Documentation
 
 Online documentation for pyLabFEA can be found under https://ahartmaier.github.io/pyLabFEA/.
 For offline use, open pyLabFEA/docs/index.html to browse through the contents.
