@@ -13,18 +13,14 @@ elastic-plastic materials, which is fully written in Python. Due to
 its simplicity, it is well-suited for teaching, and its flexibility in
 constitutive modeling of materials makes it a useful research tool.
 
-## Jupyter notebooks
+## Microstructure Branch
 
-pyLabFEA is conveniently used with Jupyter notebooks. 
-Available notebooks with tutorials on linear and non-linear FEA, homogenization of elastic and
-elastic-plastic material behavior, and constitutive models based on
-machine learning algorithms are contained in subfolder `notebooks`. An
-overview on the contents of the notebooks is available [here](https://ahartmaier.github.io/pyLabFEA/examples.html).
+This branch of the pyLabFEA package is intended for new developments to explicitly 
+take the microstructure of a material into account when defining its mechanical
+properties. This branch is still under construction. Please refer to the documentation 
+in the master branch.
 
-The Jupyter notebooks of the pyLabFEA tutorials are also available on Binder 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/AHartmaier/pyLabFEA.git/master)
-
-## Documentation
+# Documentation
 
 Online documentation for pyLabFEA can be found under https://ahartmaier.github.io/pyLabFEA/.
 For offline use, open pyLabFEA/docs/index.html to browse through the contents.
@@ -45,6 +41,7 @@ pyLabFEA requires the following packages as imports:
  - [Scipy](https://www.scipy.org/) for numerical solutions
  - [scikit-learn](https://scikit-learn.org/stable/) for machine learning algorithms
  - [MatPlotLib](https://matplotlib.org/) for graphical output
+ - [pandas](https://pandas.pydata.org/) for data import
 
 ## License
 
