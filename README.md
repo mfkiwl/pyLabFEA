@@ -20,7 +20,7 @@ take the microstructure of a material into account when defining its mechanical
 properties. This branch is still under construction. Please refer to the documentation 
 in the master branch.
 
-##Installation
+## Installation
 
 The pyLabFEA package is installed with the following command
 ```python
