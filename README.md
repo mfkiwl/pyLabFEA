@@ -23,10 +23,10 @@ in the master branch.
 ## Installation
 
 The pyLabFEA package is installed with the following command
-```python
+```
 $ python setup.py install --user
 
-```
+```python
 After this, the package can by imported with
 
 ```
