@@ -26,10 +26,10 @@ The pyLabFEA package is installed with the following command
 ```
 $ python setup.py install --user
 
-```python
+```
 After this, the package can by imported with
 
-```
+```python
 import pylabfea as fea
 
 ```
