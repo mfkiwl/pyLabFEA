@@ -244,14 +244,6 @@ class Data(object):
             self.Ndat = len(ind)
             self.sy = np.average(scyl_raw[:,0])  # get first estimate of yield point, will be refined later
             
-            'select data points with eqiv. stress in range [0.1,0.4]sy => elastic constants'
-            seq = seq_J2(self.sig)
-            ind1 = np.nonzero(np.logical_and(seq>0.1*self.sy, seq<0.4*self.sy))[0]
-            seq = seq_J2(self.sig[ind1])
-            eeq = eps_eq(self.eps[ind1])
-            self.E = np.average(seq/eeq)
-            self.nu = 0.3
-            
             'mirror stress data w.r.t. theta in deviatoric stress space'
             sc2 = np.zeros((self.Ndat,2))
             sc2[:,0] = scyl_raw[:,0]
@@ -307,6 +299,14 @@ class Data(object):
             self.syc[:,0] = np.array(hs)[ind]   # first component: seq
             self.syc[:,1] = np.array(ht)[ind]   # second component: polar angle
             self.sy = np.average(self.syc[:,0]) # refined value for yield strength of data set
+            
+            'select data points with eqiv. stress in range [0.1,0.4]sy => elastic constants'
+            seq = seq_J2(self.sig)
+            ind1 = np.nonzero(np.logical_and(seq>0.1*self.sy, seq<0.4*self.sy))[0]
+            seq = seq_J2(self.sig[ind1])
+            eeq = eps_eq(self.eps[ind1])
+            self.E = np.average(seq/eeq)
+            self.nu = 0.3
             
             print('Estimated elasic constants: E=%5.2f GPa, nu=%4.2f' % (self.E/1000, self.nu))
             print('Estimated yield strength: %5.2f MPa, from %i data sets with PEEQ approx. %5.3f' 

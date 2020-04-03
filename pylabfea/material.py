@@ -368,10 +368,12 @@ class Material(object):
             theta = np.linspace(-np.pi,np.pi,36)
             snorm = sp_cart(np.array([self.sy*np.ones(36), theta]).T)
             i=0
+            nrow = int(self.msdata.Nset/3) + 1
+            ncol = int(self.msdata.Nset/nrow)
             for set in self.msdata.set:
                 iel = np.nonzero(set.yf_test<0.)[0]
                 ipl = np.nonzero(np.logical_and(set.yf_test>=0., set.sc_test[:,0]<self.sy*1.3))[0]
-                ax = plt.subplot(2, int(self.msdata.Nset/2), i+1, projection='polar')
+                ax = plt.subplot(nrow, ncol, i+1, projection='polar')
                 plt.polar(set.sc_test[ipl,1], set.sc_test[ipl,0], 'r.')
                 plt.polar(set.sc_test[iel,1], set.sc_test[iel,0], 'b.')
                 plt.polar(set.syc[:,1], set.syc[:,0], '-c')

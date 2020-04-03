@@ -1,0 +1,54 @@
+** ----------------------------------------------------------------
+** BOUNDARY CONDITIONS
+** 
+** Name: BC-1 Type: Symmetry/Antisymmetry/Encastre
+*Boundary
+XSYMM_SET, XSYMM
+** Name: BC-2 Type: Symmetry/Antisymmetry/Encastre
+*Boundary
+YSYMM_SET, YSYMM
+** Name: BC-3 Type: Symmetry/Antisymmetry/Encastre
+*Boundary
+ZSYMM_SET, ZSYMM
+**-------------------------------------------------------------------
+** 
+** STEP: Loading
+** 
+*Step, name=Loading1, nlgeom=YES, inc=500000, unsymm=YES, solver=ITERATIVE
+*Static
+1, 250, 1e-7, 1.0
+**
+** 
+*CONTROLS, PARAMETER=TIME INCREMENTATION
+35, 50, 9, 50, 28, 5, 12, 45
+**
+*CONTROLS, PARAMETERS=LINE SEARCH
+10
+*SOLVER CONTROL
+1e-5,200,
+**
+** LOADS
+**
+** Name: Load Type: Displacement/Rotation
+*Cload
+V2,1, -0.018205100506
+V4,2, 0.009377748309
+H1,3, 0.00882735242
+**
+** OUTPUT REQUESTS
+** 
+** FIELD OUTPUT: F-Output-1
+** 
+*Output, field
+**Node Output, nset=Vertices
+**U, RF, COORD
+**Node Output
+**U
+**Element Output, directions=YES
+**SDV1,SDV2,SDV3
+*Element Output, directions=YES
+S,LE,SDV150,SDV151,SDV152,SDV153,SDV154,SDV155
+** HISTORY OUTPUT: H-Output-1
+** 
+**Output, history, variable=PRESELECT
+*End Step
