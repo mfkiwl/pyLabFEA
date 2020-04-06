@@ -1379,9 +1379,20 @@ and derived properties und various loading conditions (dictionary)</p>
 </dd></dl>
 
 <dl class="attribute">
-<dt id="material.Material.msdata">
-<code class="sig-name descname">msdata</code><a class="headerlink" href="#material.Material.msdata" title="Permalink to this definition">¶</a></dt>
-<dd><p>Object of class <code class="docutils literal notranslate"><span class="pre">Data</span></code> containing of datasets of microstructures belonging to this type of material</p>
+<dt id="material.Material.msparam">
+<code class="sig-name descname">msparam</code><a class="headerlink" href="#material.Material.msparam" title="Permalink to this definition">¶</a></dt>
+<dd><p>Dicitionary with microstructural parameters assigned to this material</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>ditionary</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="material.Material.Ndof">
+<code class="sig-name descname">Ndof</code><a class="headerlink" href="#material.Material.Ndof" title="Permalink to this definition">¶</a></dt>
+<dd><p>degress of freedom for yield function, mandatory: 1:seq, 2:theta; optional: 3:work_hard, 4:texture)</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type</dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.8)">int</a></p>
@@ -1401,6 +1412,8 @@ and derived properties und various loading conditions (dictionary)</p>
 <li><p><strong>sigeps</strong> – Store tensorial stress strain data in sub-directories;
 Contains data for ‘sig’ (2d-array - stress), ‘eps’ (2d-array - strain),
 ‘epl’ (2d-array - plastic strain)</p></li>
+<li><p><strong>msparam</strong> – Store data on microstructure parameters: ‘Npl’, ‘Nlc, ‘Ntext’, ‘texture’, ‘peeq_max’, ‘work_hard’, ‘flow_stress’
+are obtained from data analysis module. Other parameters can be added.</p></li>
 </ul>
 </dd>
 </dl>
@@ -1449,7 +1462,7 @@ Chapter 6, Eqs. (6.9) and (6.18)</p>
 
 <dl class="method">
 <dt id="material.Material.calc_fgrad">
-<code class="sig-name descname">calc_fgrad</code><span class="sig-paren">(</span><em class="sig-param">sig</em>, <em class="sig-param">seq=None</em>, <em class="sig-param">ana=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.calc_fgrad"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.calc_fgrad" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">calc_fgrad</code><span class="sig-paren">(</span><em class="sig-param">sig</em>, <em class="sig-param">peeq=0.0</em>, <em class="sig-param">seq=None</em>, <em class="sig-param">ana=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.calc_fgrad"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.calc_fgrad" title="Permalink to this definition">¶</a></dt>
 <dd><p>Calculate gradient to yield surface. Three different methods can be used: (i) analytical gradient to Hill-like yield
 function (default if no ML yield function exists - ML_yf=False), (ii) gradient to ML yield function (default if ML yield
 function exists - ML_yf=True; can be overwritten if ana=True), (iii) ML gradient fitted seperately from ML yield function
@@ -1533,27 +1546,35 @@ Drucker-like approach for tension-compression assymetry</p>
 
 <dl class="method">
 <dt id="material.Material.create_sig_data">
-<code class="sig-name descname">create_sig_data</code><span class="sig-paren">(</span><em class="sig-param">N=None</em>, <em class="sig-param">syc=None</em>, <em class="sig-param">Nseq=12</em>, <em class="sig-param">offs=0.01</em>, <em class="sig-param">extend=False</em>, <em class="sig-param">rand=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.create_sig_data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.create_sig_data" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">create_sig_data</code><span class="sig-paren">(</span><em class="sig-param">N=None</em>, <em class="sig-param">mat_ref=None</em>, <em class="sig-param">syc=None</em>, <em class="sig-param">Nseq=12</em>, <em class="sig-param">sflow=None</em>, <em class="sig-param">offs=0.01</em>, <em class="sig-param">extend=False</em>, <em class="sig-param">rand=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.create_sig_data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.create_sig_data" title="Permalink to this definition">¶</a></dt>
 <dd><p>Function to create consistent data sets on the deviatoric stress plane
-for training or testing of ML yield function. Data is created in form of cylindrical stresses</p>
+for training or testing of ML yield function. Either the number “N” of raw data points, i.e. load angles, to be
+generated and a reference material “mat_ref” has to be provided, or a list of raw data points “syc” with
+cylindrical stress tensors lying on the yield surface serves as input. Based on the raw data, stress tensors
+from the yield locus are distributed into the entire deviatoric space, by linear downscaling into the elastic
+region and upscaling into the plastic region. Data is created in form of cylindrical stresses that lie densly
+around the expected yield locus and more sparsely in the outer plastic region.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>N</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.8)"><em>int</em></a>) – Number of load cases (polar angles) to be created (optional,
-either N or theta must be provided)</p></li>
-<li><p><strong>theta</strong> (<em>(</em><em>N</em><em>,</em><em>) </em><em>array</em>) – List of polar angles from which training data in deviatoric stress plane is created
-(optional, either theta or N must be provided)</p></li>
+either N and mat_ref or syc must be provided)</p></li>
+<li><p><strong>mat_ref</strong> (object of class <code class="docutils literal notranslate"><span class="pre">Material</span></code>) – reference material needed to calculate yield function if only N is provided (optional, ignored if syc is given)</p></li>
+<li><p><strong>syc</strong> (<em>(</em><em>N</em><em>,</em><em>3</em><em>) </em><em>array</em>) – List of cyl. stress tensors lying on yield locus from which training data in entire deviatoric stress plane is created
+(optional, either syc or N and mat_ref must be provided)</p></li>
 <li><p><strong>Nseq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.8)"><em>int</em></a>) – Number of equiv. stresses generated up to yield strength (optional, default: 12)</p></li>
+<li><p><strong>sflow</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Expected flow stress of data set (optional, default: self.sy)</p></li>
 <li><p><strong>offs</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Start of range for equiv. stress (optional, default: 0.01)</p></li>
 <li><p><strong>extend</strong> (<em>Boolean</em>) – Create additional data in plastic regime (optional, default: False)</p></li>
 <li><p><strong>rand</strong> (<em>Boolean</em>) – Chose random load cases (polar angles) (optional, default: False)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p><strong>st</strong> – Cylindrical training stresses, M = N (2 Nseq + Nextend)</p>
-</dd>
-<dt class="field-odd">Return type</dt>
-<dd class="field-odd"><p>(M,3) array</p>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>st</strong> (<em>(M,3) array</em>) – Cylindrical training stresses, M = N (2 Nseq + Nextend)</p></li>
+<li><p><strong>yt</strong> (<em>(M,) array</em>) – Result vector of categorial yield function for supervised training</p></li>
+</ul>
+</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1647,13 +1668,13 @@ used by search algorithm to find zeros of yield function.</p>
 
 <dl class="method">
 <dt id="material.Material.microstructure">
-<code class="sig-name descname">microstructure</code><span class="sig-paren">(</span><em class="sig-param">data</em>, <em class="sig-param">texture=None</em>, <em class="sig-param">grain_size=None</em>, <em class="sig-param">grain_shape=None</em>, <em class="sig-param">porosity=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.microstructure"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.microstructure" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">microstructure</code><span class="sig-paren">(</span><em class="sig-param">param</em>, <em class="sig-param">grain_size=None</em>, <em class="sig-param">grain_shape=None</em>, <em class="sig-param">porosity=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.microstructure"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.microstructure" title="Permalink to this definition">¶</a></dt>
 <dd><p>Define microstructural parameters of the material: crstallographic texture, grain size, grain shape
 and porosity.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>texture</strong> (<em>array-like</em>) – Parameters describing texture (optional)</p></li>
+<li><p><strong>data</strong> (Object of class <code class="docutils literal notranslate"><span class="pre">Data</span></code>) – Assign data to microstructure of material</p></li>
 <li><p><strong>grain_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Average grain size of material (optional)</p></li>
 <li><p><strong>grain_shape</strong> (<em>(</em><em>3</em><em>,</em><em>) </em><em>array</em>) – Lengths of the three main axes of ellipsoid describing grain shape (optional)</p></li>
 <li><p><strong>porosity</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Porosity of the material</p></li>
@@ -1753,11 +1774,14 @@ behavior is supported</p>
 
 <dl class="method">
 <dt id="material.Material.set_microstructure">
-<code class="sig-name descname">set_microstructure</code><span class="sig-paren">(</span><em class="sig-param">current</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.set_microstructure"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.set_microstructure" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">set_microstructure</code><span class="sig-paren">(</span><em class="sig-param">active</em>, <em class="sig-param">current</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.set_microstructure"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.set_microstructure" title="Permalink to this definition">¶</a></dt>
 <dd><p>Set current microstrcuture of material if material has variable microstructure</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>current</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Index of current microstructure</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>active</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.8)"><em>str</em></a>) – Active microstructure parameter from dictionary <code class="docutils literal notranslate"><span class="pre">msparam</span></code></p></li>
+<li><p><strong>current</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Value of currently active microstructure parameter</p></li>
+</ul>
 </dd>
 </dl>
 </dd></dl>
@@ -1765,7 +1789,7 @@ behavior is supported</p>
 <dl class="method">
 <dt id="material.Material.setup_fgrad_SVM">
 <code class="sig-name descname">setup_fgrad_SVM</code><span class="sig-paren">(</span><em class="sig-param">X_grad_train</em>, <em class="sig-param">y_grad_train</em>, <em class="sig-param">C=10.0</em>, <em class="sig-param">gamma=0.1</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.setup_fgrad_SVM"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.setup_fgrad_SVM" title="Permalink to this definition">¶</a></dt>
-<dd><p>Inititalize and train SVM for gradient evaluation</p>
+<dd><p>Inititalize and train SVM regression for gradient evaluation</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
@@ -1811,11 +1835,27 @@ from other materials with a ML yield function. Graphical output on the trained S
 
 <dl class="method">
 <dt id="material.Material.train_SVC">
-<code class="sig-name descname">train_SVC</code><span class="sig-paren">(</span><em class="sig-param">C=10</em>, <em class="sig-param">gamma=4</em>, <em class="sig-param">plot=False</em>, <em class="sig-param">fontsize=16</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.train_SVC"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.train_SVC" title="Permalink to this definition">¶</a></dt>
-<dd><p>Train SVC for all yield functions of the microstructures provided in msdata. In First step, the
+<code class="sig-name descname">train_SVC</code><span class="sig-paren">(</span><em class="sig-param">C=10</em>, <em class="sig-param">gamma=4</em>, <em class="sig-param">Nlc=36</em>, <em class="sig-param">Nseq=25</em>, <em class="sig-param">extend=True</em>, <em class="sig-param">plot=False</em>, <em class="sig-param">fontsize=16</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/material.html#Material.train_SVC"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#material.Material.train_SVC" title="Permalink to this definition">¶</a></dt>
+<dd><p>Train SVC for all yield functions of the microstructures provided in msparam and for flow stresses to capture
+work hardening. In first step, the
 training data for each set is generated by creating stresses on the deviatoric plane and calculating their catgegorial
 yield function (“-1”: elastic, “+1”: plastic). Furthermore, axes in different dimensions for microstructural
 features are introduced that describe the relation between the different sets.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>C</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Parameter needed for training process, larger values lead to more flexibility (optional, default: 10)</p></li>
+<li><p><strong>gamma</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Parameter of Radial Basis Function of SVC kernel, larger values, lead to faster decay of influence of individual
+support vectors, i.e., to more short ranged kernels (optional, default: 4)</p></li>
+<li><p><strong>Nlc</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.8)"><em>int</em></a>) – Number of load cases to be condidered, will be overwritten if material has microstructure information (optional, default: 36)</p></li>
+<li><p><strong>Nseq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.8)"><em>int</em></a>) – Number of training as test data values to be generated in elastic regime, same number will be produced in plastic regime
+(optional, default: 25)</p></li>
+<li><p><strong>extend</strong> (<em>Boolean</em>) – Indicate whether training data should be extended further into plastic regime (optional, default: True)</p></li>
+<li><p><strong>plot</strong> (<em>Boolean</em>) – Indicate if graphical output should be performed (optional, default: False)</p></li>
+<li><p><strong>fontsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.8)"><em>int</em></a>) – Fontsize for graph annotations (optional, default: 16)</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>
@@ -1825,16 +1865,17 @@ features are introduced that describe the relation between the different sets.</
 <span id="module-data"></span><h2>Module Data<a class="headerlink" href="#module-data" title="Permalink to this headline">¶</a></h2>
 <p>Module pylabfea.data introduces the class <code class="docutils literal notranslate"><span class="pre">Data</span></code> for handling of data resulting
 from virtual or physical mechanical tests in the pyLabFEA package. This class provides the
-methods necessary for analyzing data and for preparing it a training data for
-machine learning algorithms to be used a constitutive models.</p>
+methods necessary for analyzing data. During this processing, all information is gathered
+that is required to define a material, i.e., all parameters for elasticity, plasticity,
+and microstructures are provided from the data.</p>
 <p>uses NumPy, SciPy, MatPlotLib</p>
-<p>Version: 2.1 (2020-04-01)
+<p>Version: 2.1 (2020-04-05)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, April 2020
 Email: <a class="reference external" href="mailto:alexander&#46;hartmaier&#37;&#52;&#48;rub&#46;de">alexander<span>&#46;</span>hartmaier<span>&#64;</span>rub<span>&#46;</span>de</a>
 distributed under GNU General Public License (GPLv3)</p>
 <dl class="class">
 <dt id="data.Data">
-<em class="property">class </em><code class="sig-prename descclassname">data.</code><code class="sig-name descname">Data</code><span class="sig-paren">(</span><em class="sig-param">msl</em>, <em class="sig-param">path_data</em>, <em class="sig-param">path_json=None</em>, <em class="sig-param">name='Dataset'</em>, <em class="sig-param">nth=1</em>, <em class="sig-param">epl_crit=0.002</em>, <em class="sig-param">d_ep=0.0005</em>, <em class="sig-param">plot=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/data.html#Data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#data.Data" title="Permalink to this definition">¶</a></dt>
+<em class="property">class </em><code class="sig-prename descclassname">data.</code><code class="sig-name descname">Data</code><span class="sig-paren">(</span><em class="sig-param">msl</em>, <em class="sig-param">path_data</em>, <em class="sig-param">path_json=None</em>, <em class="sig-param">name='Dataset'</em>, <em class="sig-param">nth=1</em>, <em class="sig-param">epl_crit=0.002</em>, <em class="sig-param">d_ep=0.0005</em>, <em class="sig-param">npe=50</em>, <em class="sig-param">plot=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/data.html#Data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#data.Data" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.8)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>Define class for handling data from virtual mechanical tests in micromechanical
 simulations and data from physical mechanical tests on materials with various
@@ -1850,6 +1891,7 @@ microstructures</p>
 <li><p><strong>epl_crit</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Critical plastic strain at which yield strength is defined (optional, default: 2.e-3)</p></li>
 <li><p><strong>d_ep</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.8)"><em>float</em></a>) – Range around critical value of plastic strain in which flow stresses are
 evaluated (optional, default: 5.e-4)</p></li>
+<li><p><strong>npe</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.8)"><em>int</em></a>) – Number of equiv. plastic strains used for work hardening</p></li>
 </ul>
 </dd>
 </dl>
@@ -1964,12 +2006,12 @@ evaluated (optional, default: 5.e-4)</p></li>
 </dd></dl>
 
 <dl class="attribute">
-<dt id="data.Data.texture">
-<code class="sig-name descname">texture</code><a class="headerlink" href="#data.Data.texture" title="Permalink to this definition">¶</a></dt>
-<dd><p>List of all texture parameters of microstructures</p>
+<dt id="data.Data.mat_param">
+<code class="sig-name descname">mat_param</code><a class="headerlink" href="#data.Data.mat_param" title="Permalink to this definition">¶</a></dt>
+<dd><p>Contains available data for microstructural parameters (“texture”, “work_hard”, “flow_stress”) to be transfered to material.microstructure</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type</dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.8)">list</a></p>
+<dd class="field-odd"><p>dictionary</p>
 </dd>
 </dl>
 </dd></dl>
@@ -2194,14 +2236,6 @@ evaluated (optional, default: 5.e-4)</p></li>
 </dl>
 </dd></dl>
 
-<dl class="method">
-<dt id="data.Data.Set.augment_data">
-<code class="sig-name descname">augment_data</code><span class="sig-paren">(</span><em class="sig-param">plot=False</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/data.html#Data.Set.augment_data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#data.Data.Set.augment_data" title="Permalink to this definition">¶</a></dt>
-<dd><p>Raw data is distributed over entire deviatoric plane to create a suited
-data set for training of SVC, graphical output of raw data together with
-augmented data can be created.</p>
-</dd></dl>
-
 <dl class="attribute">
 <dt>
 <code class="sig-name descname">i_pl_</code><em class="property"> = None</em></dt>
@@ -2209,9 +2243,9 @@ augmented data can be created.</p>
 </dd></dl>
 
 <dl class="attribute">
-<dt id="data.Data.Set.nu">
-<code class="sig-name descname">nu</code><em class="property"> = None</em><a class="headerlink" href="#data.Data.Set.nu" title="Permalink to this definition">¶</a></dt>
-<dd><p>mirror stress data w.r.t. theta in deviatoric stress space</p>
+<dt id="data.Data.Set.peeq_full">
+<code class="sig-name descname">peeq_full</code><em class="property"> = None</em><a class="headerlink" href="#data.Data.Set.peeq_full" title="Permalink to this definition">¶</a></dt>
+<dd><p>Consistency checks</p>
 </dd></dl>
 
 <dl class="method">
@@ -2244,9 +2278,20 @@ raw data in deviatoric cyl. stress space</p>
 
 </dd></dl>
 
+<dl class="attribute">
+<dt>
+<code class="sig-name descname">mat_param</code><em class="property"> = None</em></dt>
+<dd><p>interpolate flow stress to fixed PEEQ grid</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>for each load case in each set</p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="method">
 <dt id="data.Data.plot_yield_locus">
-<code class="sig-name descname">plot_yield_locus</code><span class="sig-paren">(</span><em class="sig-param">file=None</em>, <em class="sig-param">fontsize=18</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/data.html#Data.plot_yield_locus"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#data.Data.plot_yield_locus" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">plot_yield_locus</code><span class="sig-paren">(</span><em class="sig-param">active</em>, <em class="sig-param">set_ind=0</em>, <em class="sig-param">file=None</em>, <em class="sig-param">fontsize=18</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/data.html#Data.plot_yield_locus"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#data.Data.plot_yield_locus" title="Permalink to this definition">¶</a></dt>
 <dd><p>Plot yield loci of imported microstructures in database.</p>
 </dd></dl>
 

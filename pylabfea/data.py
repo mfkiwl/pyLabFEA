@@ -1,12 +1,13 @@
 #Module pylabfea.data
 '''Module pylabfea.data introduces the class ``Data`` for handling of data resulting 
 from virtual or physical mechanical tests in the pyLabFEA package. This class provides the 
-methods necessary for analyzing data and for preparing it a training data for 
-machine learning algorithms to be used a constitutive models.
+methods necessary for analyzing data. During this processing, all information is gathered 
+that is required to define a material, i.e., all parameters for elasticity, plasticity, 
+and microstructures are provided from the data.
 
 uses NumPy, SciPy, MatPlotLib
 
-Version: 2.1 (2020-04-01)
+Version: 2.1 (2020-04-05)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, April 2020
 Email: alexander.hartmaier@rub.de
 distributed under GNU General Public License (GPLv3)'''
@@ -47,6 +48,8 @@ class Data(object):
     d_ep     : float
         Range around critical value of plastic strain in which flow stresses are
         evaluated (optional, default: 5.e-4)
+    npe : int
+        Number of equiv. plastic strains used for work hardening
         
     Attributes
     ----------
@@ -61,13 +64,12 @@ class Data(object):
     sy_av : float
     E_av  : float
     nu_av : float
-    texture : list
-        List of all texture parameters of microstructures
-    
+    mat_param : dictionary
+        Contains available data for microstructural parameters ("texture", "work_hard", "flow_stress") to be transfered to material.microstructure
     
     '''
     def __init__(self, msl, path_data, path_json=None, name='Dataset', nth=1, 
-                            epl_crit=2.e-3, d_ep=5.e-4, plot=False):
+                            epl_crit=2.e-3, d_ep=5.e-4, npe=50, plot=False):
         self.msl  = msl
         self.Nset = len(msl)
         self.name = name
@@ -86,14 +88,66 @@ class Data(object):
         'calculate average properties over all microstructures'
         prop = np.zeros(3)
         micr = []
-        for set in self.set:
-            prop += np.array([set.sy, set.E, set.nu])
-            micr.append(set.texture_param)
+        sfl  = []
+        peeq_min = 10.  # minimum equiv. plastic strain reached in sets
+        Nlc_min = 1000  # minimum number of load cases reached in sets
+        for dset in self.set:
+            prop += np.array([dset.sy, dset.E, dset.nu])
+            micr.append(dset.texture_param)
+            peeq_min = np.minimum(peeq_min, dset.peeq_full[-10])
+            Nlc_min = np.minimum(Nlc_min, 2*len(dset.load_case))
         prop /= self.Nset  # average properties over all microstructures
-        self.sy_av = prop[0]
-        self.E_av  = prop[1]
+        self.sy_av = prop[0] # information needed when material.plasticity is initiated 
+        self.E_av  = prop[1] # information needed when material.elasticity is initiated 
         self.nu_av = prop[2]
-        self.texture = np.array(micr)
+        self.mat_param = {      # this information of the data will be copied into the material upon definition of its microstructure
+            'Npl'         : npe,       # number of PEEQ values 
+            'Nlc'         : Nlc_min,   # number of load cases covered in data (minimum of load cases reached over all sets)
+            'Ntext'       : self.Nset, # number of microstructures covered by sets
+            'texture'     : np.array(micr),  # texture parameters for each set
+            'peeq_max'    : peeq_min,  # maximum PEEQ covered in data (must be minimum of value reached over all sets)
+            'epc'         : epl_crit,  # critical PEEQ for with yield stress is defined 
+            'work_hard'   : np.linspace(epl_crit,peeq_min,npe) # values of PEEQ for which flow stresses are available
+        }
+        'for each load case in each set: interpolate flow stress to fixed PEEQ grid'
+        Nlc = self.mat_param['Nlc']
+        sf = np.zeros((self.Nset,npe,Nlc,3))  
+        sflow_av = np.zeros((self.Nset,npe))
+        iset = 0
+        for dset in self.set:   # loop over data sets
+            ipeeq=0
+            for peeq in self.mat_param['work_hard']:  # loop over PEEQS for which flow stresses are required
+                hs = []
+                ht = []
+                for i in range(int(Nlc/2)):  # loop over load cases for each level of PEEQ
+                    'this should be generalized for the case that Nlc varies strongly over the sets'
+                    ind = dset.load_case[i]  # indices of data points belonging to this load case
+                    'select data points above and below peeq'
+                    iel = np.nonzero(dset.peeq_full[ind]<peeq)[0]  # find elastic data sets in load case
+                    ipl = np.nonzero(dset.peeq_full[ind]>=peeq)[0] # find plastic data sets in load case
+                    eel = dset.peeq_full[ind[iel[-1]]]  # last data point < peeq
+                    epl = dset.peeq_full[ind[ipl[0]]]   # first data point > peeq
+                    s0  = dset.sc_full[ind[iel[-1]],0]  # largest flow stress below peeq
+                    s1  = dset.sc_full[ind[ipl[0]],0]   # smallest flow stress above peeq
+                    ds = s1 - s0     # difference in seq b/w data points around peeq
+                    de = epl  - eel  # difference in peeq for closest data points
+                    sint = s0 + (peeq-eel)*ds/de # linearly interpolated equiv. flow stress at peeq
+                    theta = dset.sc_full[ind[iel[-1]],1] # polar angle (not interpolated)
+                    hs.append(sint)
+                    hs.append(sint)  # append twice to consider tension compression symmetry in material
+                    ht.append(theta) # append original polar angles
+                    theta -= np.pi   # mirror polar angle
+                    if theta<-np.pi:
+                        theta += 2*np.pi
+                    ht.append(theta) # append mirrored polar angles
+                ind = np.argsort(ht) # sort w.r.t. polar angle
+                sf[iset,ipeeq,:,0] = np.array(hs)[ind]   # first component: seq
+                sf[iset,ipeeq,:,1] = np.array(ht)[ind]   # second component: polar angle
+                sflow_av[iset,ipeeq] = np.average(hs)    # average seq over polar angles
+                ipeeq += 1
+            iset += 1
+        self.mat_param['flow_stress'] = sf       # cylindrical flow stresses at PEEQs in 'work_hard' for each texture
+        self.mat_param['flow_seq_av'] = sflow_av # averaged equiv. flow stresses at PEEQs in 'work_hard' for each texture
         
     class Set(object):
         '''Define class for handling of a dataset for one individual material 
@@ -210,20 +264,20 @@ class Data(object):
             self.texture_param = int(self.name[-1])
             
             'calculate eqiv. stresses and strains and theta values'
-            sc_full   = s_cyl(self.sig)   # transform stresses into cylindrical coordinates
-            peeq_full = eps_eq(self.epl)  # calculate equiv. plastic strain from data
+            self.sc_full   = s_cyl(self.sig)   # transform stresses into cylindrical coordinates
+            self.peeq_full = eps_eq(self.epl)  # calculate equiv. plastic strain from data
             
             'Consistency checks'
-            if np.amax(np.abs(sc_full[:,2])) > 1.:
+            if np.amax(np.abs(self.sc_full[:,2])) > 1.:
                 print('*** Warning: Large hydrostatic stresses: minimum p=%5.2f MPa, maximum p=%5.2f MPa' 
-                      %(np.amin(sc_full[:,2]),np.amax(sc_full[:,2])))
+                      %(np.amin(self.sc_full[:,2]),np.amax(self.sc_full[:,2])))
             '''hh = self.eel - (self.eps-self.epl)
             if np.amax(eps_eq(hh)) > 1.e-8:
                 print('*** WARNING: Inconsistency in eps_el!')
-            hh = self.ang - sc_full[:,1]
+            hh = self.ang - self.sc_full[:,1]
             if np.amax(np.abs(hh)) > 1.e-6:
                 print('*** WARNING: Inconsistency in theta!')
-                print(self.ang[0:self.N:2500], sc_full[0:self.N:2500,1], hh[0:self.N:2500])'''
+                print(self.ang[0:self.N:2500], self.sc_full[0:self.N:2500,1], hh[0:self.N:2500])'''
 
             'filter load cases'
             self.load_case = []   # list of lists with data set indices belonging to one load case
@@ -238,9 +292,9 @@ class Data(object):
                     uvec = self.ubc[i,:]
             
             'select data points close to yield point => yield strength sy and raw data for ML flow rule'
-            ind = np.nonzero(np.logical_and(peeq_full>db.epc-db.dep, peeq_full<db.epc+db.dep))[0]
-            scyl_raw = sc_full[ind]
-            peeq_raw = peeq_full[ind]
+            ind = np.nonzero(np.logical_and(self.peeq_full>db.epc-db.dep, self.peeq_full<db.epc+db.dep))[0]
+            scyl_raw = self.sc_full[ind]
+            peeq_raw = self.peeq_full[ind]
             self.Ndat = len(ind)
             self.sy = np.average(scyl_raw[:,0])  # get first estimate of yield point, will be refined later
             
@@ -283,7 +337,7 @@ class Data(object):
             self.Nlc = len(self.lc_)
             print('Number of load cases: ',self.Nlc)
 
-            'calculate yield stress for each load case'
+            'for each load case: interpolate flow stress to fixed PEEQ'
             hs = []
             ht = []
             for i in range(self.Nlc):
@@ -314,11 +368,10 @@ class Data(object):
             if plot:
                 self.plot_set()
                    
-        def augment_data(self, plot=False):
-            '''Raw data is distributed over entire deviatoric plane to create a suited
-            data set for training of SVC, graphical output of raw data together with 
-            augmented data can be created.
-            '''
+        '''def augment_data(self, plot=False):
+            #Raw data is distributed over entire deviatoric plane to create a suited
+            #data set for training of SVC, graphical output of raw data together with 
+            #augmented data can be created.
             
             'augment raw data and create result vector (yield function)'
             self.sc_train, self.yf_train = mat.create_sig_data(syc=self.syc, Nseq=25, extend=True)
@@ -337,6 +390,7 @@ class Data(object):
                 ax.tick_params(axis="x", labelsize=16)
                 ax.tick_params(axis="y", labelsize=16)
                 plt.show()
+        '''
 
         def plot_set(self, file=None, nth=18, fontsize=18):
             '''Graphical output of equiv. stress vs. equic. total strain for selected load cases and 
@@ -351,13 +405,15 @@ class Data(object):
             fontsize : 20
                 Fontsize for plot (optional, default: 20)
             '''
+            cmap = mpl.cm.get_cmap('hsv', 10)
             fig = plt.figure(figsize=(16,7))
             plt.subplots_adjust(wspace=0.6)
             N = len(self.load_case)
             ax = plt.subplot(1,2,1)
             for i in range(0,N,nth):
                 ind = self.load_case[i]
-                plt.plot(eps_eq(self.eps[ind])*100, seq_J2(self.sig[ind]), '.k')
+                col = polar_ang(self.sig[ind[-1]])/np.pi
+                plt.plot(eps_eq(self.eps[ind])*100, seq_J2(self.sig[ind]), color=cmap(col)) #'.k')
             plt.xlabel(r'$\epsilon_{eq}^\mathrm{tot}$ (%)', fontsize=fontsize)
             plt.ylabel(r'$\sigma_{eq}$ (MPa)', fontsize=fontsize)
             plt.title('Equiv. total strain vs. equiv. J2 stress', fontsize=fontsize)
@@ -379,23 +435,28 @@ class Data(object):
             if file is not None:
                 plt.savefig(file+self.name+'.pdf', format='pdf', dpi=300)
             plt.show()
-            
-
     
-    def plot_yield_locus(self, file=None, fontsize=18):
+    def plot_yield_locus(self, active, set_ind=0, file=None, fontsize=18):
         '''Plot yield loci of imported microstructures in database.
         '''
         fig = plt.figure(figsize=(15, 8))
-        cmap = mpl.cm.get_cmap('plasma', 10)
-        legend = []
-        tp_max = 0.
-        for set in self.set:
-            tp_max = np.maximum(tp_max, set.texture_param)
-            
-        for set in self.set:
-            plt.polar(set.syc[:,1], set.syc[:,0], color=cmap(set.texture_param/tp_max-0.25))
-            legend.append(set.name)
-            plt.legend(legend,loc=(1.04,0.7),fontsize=fontsize-2)
+        cmap = mpl.cm.get_cmap('hsv', 10)
+        ms_max = np.amax(self.mat_param[active])
+        Ndat = len(self.mat_param[active])
+        v0 = self.mat_param[active][0]
+        scale = self.mat_param[active][-1] - v0
+        for i in range(Ndat):
+            val = self.mat_param[active][i]
+            if active=='work_hard':
+                dset = self.set[set_ind]
+                sc = self.mat_param['flow_stress'][set_ind,i,:,:]
+                label = 'PEEQ: '+str(val.round(decimals=4))
+            else:
+                dset = self.set[i]
+                sc = self.mat_param['flow_stress'][i,0,:,:]
+                label = dset.name
+            plt.polar(sc[:,1], sc[:,0], color=cmap((val-v0)/scale), label=label)
+            plt.legend(loc=(1.04,0.7),fontsize=fontsize-2)
         if file is not None:
             plt.savefig(file+'.pdf', format='pdf', dpi=300)
         plt.tick_params(axis="x", labelsize=fontsize-4)
