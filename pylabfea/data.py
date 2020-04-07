@@ -88,12 +88,14 @@ class Data(object):
         'calculate average properties over all microstructures'
         prop = np.zeros(3)
         micr = []
+        name = []
         sfl  = []
         peeq_min = 10.  # minimum equiv. plastic strain reached in sets
         Nlc_min = 1000  # minimum number of load cases reached in sets
         for dset in self.set:
             prop += np.array([dset.sy, dset.E, dset.nu])
             micr.append(dset.texture_param)
+            name.append(dset.name)
             peeq_min = np.minimum(peeq_min, dset.peeq_full[-10])
             Nlc_min = np.minimum(Nlc_min, 2*len(dset.load_case))
         prop /= self.Nset  # average properties over all microstructures
@@ -105,6 +107,7 @@ class Data(object):
             'Nlc'         : Nlc_min,   # number of load cases covered in data (minimum of load cases reached over all sets)
             'Ntext'       : self.Nset, # number of microstructures covered by sets
             'texture'     : np.array(micr),  # texture parameters for each set
+            'ms_name'     : name,      # list of names of differnt microstructures
             'peeq_max'    : peeq_min,  # maximum PEEQ covered in data (must be minimum of value reached over all sets)
             'epc'         : epl_crit,  # critical PEEQ for with yield stress is defined 
             'work_hard'   : np.linspace(epl_crit,peeq_min,npe) # values of PEEQ for which flow stresses are available
@@ -405,7 +408,7 @@ class Data(object):
             fontsize : 20
                 Fontsize for plot (optional, default: 20)
             '''
-            cmap = mpl.cm.get_cmap('hsv', 10)
+            cmap = mpl.cm.get_cmap('viridis', 10)
             fig = plt.figure(figsize=(16,7))
             plt.subplots_adjust(wspace=0.6)
             N = len(self.load_case)
@@ -440,7 +443,7 @@ class Data(object):
         '''Plot yield loci of imported microstructures in database.
         '''
         fig = plt.figure(figsize=(15, 8))
-        cmap = mpl.cm.get_cmap('hsv', 10)
+        cmap = mpl.cm.get_cmap('viridis', 10)
         ms_max = np.amax(self.mat_param[active])
         Ndat = len(self.mat_param[active])
         v0 = self.mat_param[active][0]

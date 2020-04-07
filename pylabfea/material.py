@@ -408,7 +408,7 @@ class Material(object):
         if plot:
             'plot ML yield loci with reference and test data'
             print('Plot ML yield loci with reference curve and test data')
-            if self.Ndof==3:
+            if self.Ndof>=3:
                 print('Initial yield locus plotted together with flow stresses for PEEQ in range [%6.3f,%6.3f]' 
                       % (self.msparam['work_hard'][0], self.msparam['work_hard'][-1]))
             if self.Ndof==4:
@@ -424,13 +424,14 @@ class Material(object):
             for k in range(Ntext):
                 self.set_microstructure('texture', self.msparam['texture'][k])
                 for j in range(0,Npl,np.maximum(1,int(Npl/5))):
-                    'Wanring: x_test and y_test should be setup properly above!!!'
+                    'Warning: x_test and y_test should be setup properly above!!!'
                     ind = list(range((j+k*Npl)*N0,(j+k*Npl+1)*N0,int(0.5*N0/Nlc)))
                     y_test = yt[ind]
                     x_test = xt[ind,:]
-                    sflow = self.msparam['flow_seq_av'][k,j]
+                    peeq = self.msparam['work_hard'][j] - self.msparam['epc']
+                    self.set_workhard(peeq)
                     iel = np.nonzero(y_test<0.)[0]
-                    ipl = np.nonzero(np.logical_and(y_test>=0., x_test[:,0]<sflow*1.5))[0]
+                    ipl = np.nonzero(np.logical_and(y_test>=0., x_test[:,0]<self.sflow*1.5))[0]
                     ax = plt.subplot(nrow, ncol, j+k*Npl+1, projection='polar')
                     plt.polar(x_test[ipl,1], x_test[ipl,0], 'r.', label='test data above yield point')
                     plt.polar(x_test[iel,1], x_test[iel,0], 'b.', label='test data below yield point')
@@ -438,8 +439,7 @@ class Material(object):
                         syc = self.msparam['flow_stress'][k,j,:,:]
                         plt.polar(syc[:,1], syc[:,0], '-c', label='reference yield locus')
                     'ML yield fct: find norm of princ. stess vector lying on yield surface'
-                    self.wh_cur=self.msparam['work_hard'][j]
-                    snorm = sp_cart(np.array([sflow*np.ones(36), theta]).T)
+                    snorm = sp_cart(np.array([self.sflow*np.ones(36), theta]).T)
                     x1 = fsolve(self.find_yloc, np.ones(36), args=snorm, xtol=1.e-5)
                     sig = snorm*np.array([x1,x1,x1]).T
                     s_yld = seq_J2(sig)
@@ -729,16 +729,14 @@ class Material(object):
 
         'import dictionary will all microstructure parameters resulting from data module'
         self.msparam = param 
-        if param['Npl']>1:
-            self.Ndof += 1   # add dof for work hardening
-        if param['Ntext']>1:
-            self.Ndof += 1   # add dof for texture
+        if param['Npl']>1 and self.Ndof<3:
+            self.Ndof = 3   # add dof for work hardening
+        if param['Ntext']>1 and self.Ndof<4:
+            self.Ndof = 4   # add dof for texture
         'add additional microstructure information'
         self.msparam['grain_size'] = grain_size  # add further microstructure parameters
         self.msparam['grain_shape'] = grain_shape
         self.msparam['porosity'] =  porosity
-        'initialize work hardening parameter'
-        self.wh_cur = param['work_hard'][0]
         'calculate scaling factors need for SVC training'
         self.scale_wh = np.average(self.msparam['work_hard'])
         self.scale_text = np.average(self.msparam['texture'])
@@ -750,12 +748,41 @@ class Material(object):
         Parameters
         ----------
         active  : str
-            Active microstructure parameter from dictionary ``msparam``
+            Active microstructure component from dictionary ``msparam``
         current : float
             Value of currently active microstructure parameter
+            
+        Yields
+        ------
+        Material.ms_act : str
+            Keyword of active microstructure component, e.g. 'texture'
+        Material.ms_cur : float
+            Current value of microstructural parameter for active microstructure
         '''
         self.ms_act = active
         self.ms_cur = current
+        hh = self.msparam[active] - current
+        self.ms_index = np.argmin(np.abs(hh))
+        
+    def set_workhard(self, peeq):
+        '''Set current status of work hardening.
+        
+        Parameters
+        ----------
+        peeq : float
+            Current value of equivalent plastic strain 
+            
+        Yields
+        ------
+        Material.wh_cur : float
+            Work hardening parameter or microstructural value of equiv. plastic
+            strain, which is the mechanical peeq plus the critical value for yield onset.
+        Material.sflow : float
+            Flow stress associated with work hardening parameter
+        '''
+        self.wh_cur = peeq + self.msparam['epc']
+        self.sflow  = np.interp(self.wh_cur, self.msparam['work_hard'], 
+                                self.msparam['flow_seq_av'][self.ms_index,:]) 
 
     def epl_dot(self, sig, epl, Cel, deps):
         '''Calculate plastic strain increment relaxing stress back to yield locus;
