@@ -706,7 +706,10 @@ class Model(object):
                 if (el.Mat.sy!=None):  # not necessary for elastic material
                     peeq = eps_eq(el.epl+el.depl()) # calculate equiv. plastic strain
                     sig = el.sig+el.dsig()
-                    hh = el.Mat.calc_yf(sig, peeq=peeq)
+                    if el.Mat.ML_yf and el.Mat.msparam is not None:
+                        hh = el.Mat.ML_full_yf(sig)
+                    else:
+                        hh = el.Mat.calc_yf(sig, peeq=peeq)
                     if hh > ptol:
                         # for debugging
                         '''h0 = el.Mat.calc_yf(el.sig,peeq=eps_eq(el.epl)) # calculate yield function at last converged step
@@ -935,7 +938,7 @@ class Model(object):
                         print('yield function=',f,'residual forces on inner nodes=',fres[jin])
                         el = self.element[0]
                         print('sig, disg, epl, depl, deps:',el.sig, el.dsig(), el.epl, el.depl(), el.deps())
-                    if i>7:
+                    if i>7 and not conv:
                         print('Warning: No convergence achieved, abandoning')
                         print('conv,i,f,ptol,dbcr,dbct',conv,i,f,ptol,dbcr,dbct)
                         conv = True
@@ -950,6 +953,9 @@ class Model(object):
                 el.eps = el.eps_t()
                 el.epl += el.depl()
                 el.sig += el.dsig()
+                if el.Mat.msparam is not None:
+                    peeq = eps_eq(el.epl)
+                    el.Mat.set_workhard(peeq)
             'update load step'
             il += 1
             bcr0 += dbcr

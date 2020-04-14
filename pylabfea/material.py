@@ -144,7 +144,7 @@ class Material(object):
             else:
                 N = len(sig)
             x = np.zeros((N,self.Ndof))
-            x[:,0] = seq_J2(sig)/self.sy - 1.
+            x[:,0] = seq_J2(sig)/self.scale_seq - 1.
             x[:,1] = polar_ang(sig)/np.pi
             if self.Ndof>=3:
                 x[:,2] = self.wh_cur/self.scale_wh - 1.
@@ -167,7 +167,8 @@ class Material(object):
                 seq = Stress(sig).seq(self)  # calculate equiv. stress
             else:  # array of princ. stresses
                 seq = self.calc_seq(sig)
-            f = seq - (self.sy + peeq*self.khard)
+            self.sflow = self.sy + peeq*self.Hpr
+            f = seq - self.sflow
             self.msg['yield_fct'] = 'analytical'
         return f
 
@@ -191,13 +192,15 @@ class Material(object):
         sp = Stress(sig).p
         seq = self.calc_seq(sp)
         if seq<0.01 and ld is None:
-            yf = seq - 0.85*self.sy
+            yf = seq - 0.85*self.sflow
         else:
             if (seq>=0.01):
-                ld = sp*self.sy/seq
+                ld = sp*self.sflow*np.sqrt(1.5)/seq
             x0 = 1.
-            if ld[0]*ld[1] < 0.:
+            if ld[0]*ld[1] < -1.e-5:
                 x0 = 0.5
+                if self.Tresca:
+                    x0 = 0.4
             x1, infodict, ier, msg = fsolve(self.find_yloc, x0, args=ld, xtol=1.e-5, full_output=True)
             y1 = infodict['fvec']
             if np.abs(y1)<1.e-3 and x1[0]<3.:
@@ -205,7 +208,7 @@ class Material(object):
                 yf = seq - x1[0]*self.calc_seq(ld)
             else:
                 # zero of ML yield fct. not found: get conservative estimate
-                yf = seq - 0.85*self.sy
+                yf = seq - 0.85*self.sflow
                 if verb:
                     print('Warning in calc_scf')
                     print('*** detection not successful. yf=', yf,', seq=', seq)
@@ -251,17 +254,24 @@ class Material(object):
         '''
         'transformation of princ. stress into cyl. coordinates'
         self.gam_yf = gamma
+        if self.msparam is None:
+            self.scale_seq = self.sy
+        else:
+            'calculate scaling factors need for SVC training from microstructure parameters'
+            self.scale_seq  = np.average(self.msparam['flow_seq_av'])
+            self.scale_wh   = np.average(self.msparam['work_hard'])
+            self.scale_text = np.average(self.msparam['texture'])
         N = len(x)
         sh = np.shape(x)
         X_train = np.zeros((N,self.Ndof))
         if not cyl:
             'princ. stresses'
-            X_train[:,0] = seq_J2(x)/self.sy - 1.
+            X_train[:,0] = seq_J2(x)/self.scale_seq - 1.
             X_train[:,1] = polar_ang(x)/np.pi
             print('Using principle stresses for training')
         else:
             'cylindrical stresses'
-            X_train[:,0] = x[:,0]/self.sy - 1.
+            X_train[:,0] = x[:,0]/self.scale_seq - 1.
             X_train[:,1] = x[:,1]/np.pi
             print('Using cyclindrical stresses for training')
         if self.Ndof>=3:
@@ -287,10 +297,10 @@ class Material(object):
             Ntest = len(x_test)
             X_test = np.zeros((Ntest,self.Ndof))
             if not cyl:
-                X_test[:,0] = seq_J2(x_test)/self.sy - 1.
+                X_test[:,0] = seq_J2(x_test)/self.scale_seq - 1.
                 X_test[:,1] = polar_ang(x_test)/np.pi
             else:
-                X_test[:,0] = x_test[:,0]/self.sy - 1.
+                X_test[:,0] = x_test[:,0]/self.scale_seq - 1.
                 X_test[:,1] = x_test[:,1]/np.pi
             if self.Ndof>=3 :
                 X_test[:,2] = x_test[:,2]/self.scale_wh - 1.
@@ -319,7 +329,7 @@ class Material(object):
             elif self.Ndof==3:
                 feat = np.c_[yy.ravel(),xx.ravel(),np.ones(2500)*self.scale_wh]
             else:
-                feat = np.c_[yy.ravel(),xx.ravel(),np.ones(2500)*self.scale_wh,np.ones(2500)*self.sc_text]
+                feat = np.c_[yy.ravel(),xx.ravel(),np.ones(2500)*self.scale_wh,np.ones(2500)*self.scale_text]
             Z = self.svm_yf.decision_function(feat)
             hl = self.plot_data(Z, ax, xx, yy, c='black')
             h1 = ax.scatter(X_train[:,1], X_train[:,0], s=10, c=y_train, cmap=plt.cm.Paired)
@@ -422,7 +432,7 @@ class Material(object):
             plt.subplots_adjust(hspace=0.3)
             theta = np.linspace(-np.pi,np.pi,36)
             for k in range(Ntext):
-                self.set_microstructure('texture', self.msparam['texture'][k])
+                self.set_microstructure('texture', self.msparam['texture'][k], verb=False)
                 for j in range(0,Npl,np.maximum(1,int(Npl/5))):
                     'Warning: x_test and y_test should be setup properly above!!!'
                     ind = list(range((j+k*Npl)*N0,(j+k*Npl+1)*N0,int(0.5*N0/Nlc)))
@@ -439,7 +449,7 @@ class Material(object):
                         syc = self.msparam['flow_stress'][k,j,:,:]
                         plt.polar(syc[:,1], syc[:,0], '-c', label='reference yield locus')
                     'ML yield fct: find norm of princ. stess vector lying on yield surface'
-                    snorm = sp_cart(np.array([self.sflow*np.ones(36), theta]).T)
+                    snorm = sp_cart(np.array([self.sflow*np.ones(36)*np.sqrt(1.5), theta]).T)
                     x1 = fsolve(self.find_yloc, np.ones(36), args=snorm, xtol=1.e-5)
                     sig = snorm*np.array([x1,x1,x1]).T
                     s_yld = seq_J2(sig)
@@ -522,7 +532,7 @@ class Material(object):
                 return J
             N = len(sig)
             x = np.zeros((N,self.Ndof))
-            x[:,0] = seq_J2(sig)/self.sy - 1.
+            x[:,0] = seq_J2(sig)/self.scale_seq - 1.
             x[:,1] = polar_ang(sig)/np.pi
             if self.Ndof>=3:
                 x[:,2] = (peeq+self.msparam['epc'])/self.scale_wh - 1.
@@ -703,8 +713,8 @@ class Material(object):
         Tresca : Boolean
             Indicate if Tresca equivalent stress should be used (optional, default: False)
         '''
-        self.pm = 1  # set plasticity model to Hill
         self.sy = sy   # yield strength
+        self.sflow = sy # initialize flow stress (will be increase with work hardening)
         self.khard = khard  # work hardening rate (linear w.h.)
         self.Hpr = khard/(1.-khard/self.E)  # constant for w.h.
         self.hill = np.array(hill)  # Hill anisotropic parameters
@@ -736,13 +746,9 @@ class Material(object):
         'add additional microstructure information'
         self.msparam['grain_size'] = grain_size  # add further microstructure parameters
         self.msparam['grain_shape'] = grain_shape
-        self.msparam['porosity'] =  porosity
-        'calculate scaling factors need for SVC training'
-        self.scale_wh = np.average(self.msparam['work_hard'])
-        self.scale_text = np.average(self.msparam['texture'])
+        self.msparam['porosity'] =  porosity        
         
-        
-    def set_microstructure(self, active, current):
+    def set_microstructure(self, active, current, verb=True):
         '''Set current microstrcuture of material if material has variable microstructure
         
         Parameters
@@ -751,6 +757,8 @@ class Material(object):
             Active microstructure component from dictionary ``msparam``
         current : float
             Value of currently active microstructure parameter
+        verb : Boolean
+            Be verbose 
             
         Yields
         ------
@@ -758,13 +766,32 @@ class Material(object):
             Keyword of active microstructure component, e.g. 'texture'
         Material.ms_cur : float
             Current value of microstructural parameter for active microstructure
+        Material.sy  : float
+            Yield stength is redefined accoring to texture parameter
+        Material.khard, Material.Hpr : float
+            Work hardening parameters are redefined according to texture parameter
         '''
         self.ms_act = active
         self.ms_cur = current
         hh = self.msparam[active] - current
         self.ms_index = np.argmin(np.abs(hh))
+        'redefine plasticity parameters according to texture parameter'
+        #print(active, current, self.msparam[active],self.msparam['flow_seq_av'][self.ms_index,0])
+        self.sy = np.interp(current, self.msparam[active],self.msparam['flow_seq_av'][:,0])
+        if self.msparam['Npl'] > 1:
+            'set strain hardening parameters to initial value for selected texture'
+            ds = self.msparam['flow_seq_av'][self.ms_index,1] - self.msparam['flow_seq_av'][self.ms_index,0] # assuming isotropic hardening
+            de = self.msparam['work_hard'][1] - self.msparam['work_hard'][0]
+            self.Hpr =  ds/de # linear work hardening rate b/w values for w.h. in data
+            self.khard = self.Hpr/(1.+self.Hpr/self.E)  # constant for w.h.
+        if verb:
+            print('New microstructure selected: ',self.msparam['ms_name'][self.ms_index],
+                  '(Norm parameter:', self.msparam[active][self.ms_index],')')
+            print('Actual microstructure parameter:', current)
+            print('Yield strength:',self.sy,'MPa')
+            print('Work hardening modulus:',self.khard,'MPa')
         
-    def set_workhard(self, peeq):
+    def set_workhard(self, peeq, verb=False):
         '''Set current status of work hardening.
         
         Parameters
@@ -782,7 +809,26 @@ class Material(object):
         '''
         self.wh_cur = peeq + self.msparam['epc']
         self.sflow  = np.interp(self.wh_cur, self.msparam['work_hard'], 
-                                self.msparam['flow_seq_av'][self.ms_index,:]) 
+                                self.msparam['flow_seq_av'][self.ms_index,:])
+        hh = self.msparam['work_hard'] - self.wh_cur
+        if self.msparam['Npl'] > 1:
+            ind = np.nonzero(hh<=0.)[0]
+            i0 = ind[-1]  # index of w.h. parameter with value just below peeq
+            i1 = i0 + 1
+            if i1<self.msparam['Npl']:
+                ds = self.msparam['flow_seq_av'][self.ms_index,i1] - self.msparam['flow_seq_av'][self.ms_index,i0] # assuming isotropic hardening
+                de = self.msparam['work_hard'][i1] - self.msparam['work_hard'][i0]
+                self.Hpr =  ds/de # linear work hardening rate b/w values for w.h. in data
+                self.khard = self.Hpr/(1.+self.Hpr/self.E)  # constant for w.h.
+            else:
+                'assume ideal plasticity after last data point'
+                self.khard = 0.
+                self.Hpr = 0.
+        if verb:
+            print('Currect work hardening parameter:', self.wh_cur)
+            print('Current flow stress (MPa): ', self.sflow)
+            print('Yield strength:',self.sy,'MPa')
+            print('Work hardening modulus:',self.khard,'MPa')
 
     def epl_dot(self, sig, epl, Cel, deps):
         '''Calculate plastic strain increment relaxing stress back to yield locus;
@@ -821,7 +867,7 @@ class Material(object):
         else:
             a = np.zeros(6)
             a[0:3] = self.calc_fgrad(Stress(sig).p)
-            hh = a.T @ Cel @ a + self.Hpr
+            hh = a.T @ Cel @ a + 4.*self.Hpr
             lam_dot = a.T @ Cel @ deps / hh  # deps must not contain elastic strain components
             pdot = lam_dot * a
         return pdot
@@ -845,7 +891,7 @@ class Material(object):
         '''
         a = np.zeros(6)
         a[0:3] = self.calc_fgrad(Stress(sig).princ)
-        hh = a.T @ Cel @ a + self.Hpr
+        hh = a.T @ Cel @ a + 4.*self.Hpr
         ca = Cel @ a
         Ct = Cel - np.kron(ca, ca).reshape(6,6)/hh
         return Ct
@@ -1056,6 +1102,7 @@ class Material(object):
         if Nc==1:
             fs = (10, 8)
             fontsize *= 4/5
+            plt.subplots_adjust(wspace=0.2)
         else:
             fs = (20, 5)
         fig, axs  = plt.subplots(nrows=1, ncols=Nc, figsize=fs)
@@ -1240,15 +1287,15 @@ class Material(object):
             self.prop['sty']['name']  = 'uniax-y'
             return
         def calc_et2():
-            u1 = 0.67*eps*size
-            u2 = 0.67*eps*size
+            u1 = 0.4*eps*size
+            u2 = 0.4*eps*size
             calc_strength(u1, 'disp', u2, 'disp', 'et2')
             self.prop['et2']['style'] = '-k'
             self.prop['et2']['name']  = 'equibiax'
             return
         def calc_ect():
-            u1 = -0.78*eps*size
-            u2 = 0.78*eps*size
+            u1 = -0.8*eps*size
+            u2 = 0.8*eps*size
             calc_strength(u1, 'disp', u2, 'disp', 'ect')
             self.prop['ect']['style'] = '-m'
             self.prop['ect']['name']  = 'shear'

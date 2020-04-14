@@ -89,13 +89,15 @@ class Data(object):
         prop = np.zeros(3)
         micr = []
         name = []
+        ttyp = []
         sfl  = []
         peeq_min = 10.  # minimum equiv. plastic strain reached in sets
         Nlc_min = 1000  # minimum number of load cases reached in sets
         for dset in self.set:
             prop += np.array([dset.sy, dset.E, dset.nu])
             micr.append(dset.texture_param)
-            name.append(dset.name)
+            name.append(dset.texture_name)
+            ttyp.append(dset.texture_type)
             peeq_min = np.minimum(peeq_min, dset.peeq_full[-10])
             Nlc_min = np.minimum(Nlc_min, 2*len(dset.load_case))
         prop /= self.Nset  # average properties over all microstructures
@@ -108,6 +110,7 @@ class Data(object):
             'Ntext'       : self.Nset, # number of microstructures covered by sets
             'texture'     : np.array(micr),  # texture parameters for each set
             'ms_name'     : name,      # list of names of differnt microstructures
+            'ms_type'     : ttyp,      # unimodal texture type
             'peeq_max'    : peeq_min,  # maximum PEEQ covered in data (must be minimum of value reached over all sets)
             'epc'         : epl_crit,  # critical PEEQ for with yield stress is defined 
             'work_hard'   : np.linspace(epl_crit,peeq_min,npe) # values of PEEQ for which flow stresses are available
@@ -119,12 +122,19 @@ class Data(object):
         iset = 0
         for dset in self.set:   # loop over data sets
             ipeeq=0
+            N0 = int(Nlc/2)
+            N1 = len(dset.load_case)
+            x0 = np.linspace(0,1,N0)
+            x1 = np.linspace(0,1,N1)
+            y1 = np.linspace(0,N1-1,N1)
+            ilc = np.interp(x0,x1,y1).astype(int)
+            
             for peeq in self.mat_param['work_hard']:  # loop over PEEQS for which flow stresses are required
                 hs = []
                 ht = []
-                for i in range(int(Nlc/2)):  # loop over load cases for each level of PEEQ
+                for i in range(N0):  # loop over load cases for each level of PEEQ
                     'this should be generalized for the case that Nlc varies strongly over the sets'
-                    ind = dset.load_case[i]  # indices of data points belonging to this load case
+                    ind = dset.load_case[ilc[i]]  # indices of data points belonging to this load case
                     'select data points above and below peeq'
                     iel = np.nonzero(dset.peeq_full[ind]<peeq)[0]  # find elastic data sets in load case
                     ipl = np.nonzero(dset.peeq_full[ind]>=peeq)[0] # find plastic data sets in load case
@@ -257,14 +267,11 @@ class Data(object):
             print('\n*** Microstructure:',self.name,'***')
             print(self.N,' data points imported into database ',self.db.name)
             
-            '''
-            'import Fourier coefficients'
-            fc_name = db.pd + self.meta['Fourier_coeff']
-            f = open(fc_name, 'r')
-            for x in f:
-                print(x[0], x)
-            '''
-            self.texture_param = int(self.name[-1])
+            'import texture parameters'
+            self.texture_param = self.meta['Texture_index']
+            self.texture_name  = self.meta['Texture_name']
+            self.texture_type  = self.meta['Texture_type']
+            print('Texture ', self.texture_name, '(',self.texture_name,') with texture parameter: ',self.texture_param)
             
             'calculate eqiv. stresses and strains and theta values'
             self.sc_full   = s_cyl(self.sig)   # transform stresses into cylindrical coordinates
@@ -331,14 +338,14 @@ class Data(object):
             hh = []
             uvec = self.ubc_[0,:]
             for i in range(self.Ndat):
-                if np.linalg.norm(self.ubc_[i,:]-uvec) < 1.e-6:
+                if np.linalg.norm(self.ubc_[i,:]-uvec) < 1.e-5:
                     hh.append(i)
                 else:
                     self.lc_.append(hh)
                     hh = []
                     uvec = self.ubc_[i,:]
             self.Nlc = len(self.lc_)
-            print('Number of load cases: ',self.Nlc)
+            print('Number of load cases: ',self.Nlc, '; initially: ',self.Ndat)
 
             'for each load case: interpolate flow stress to fixed PEEQ'
             hs = []
@@ -448,17 +455,22 @@ class Data(object):
         Ndat = len(self.mat_param[active])
         v0 = self.mat_param[active][0]
         scale = self.mat_param[active][-1] - v0
+        if np.abs(scale)<1.e-3:
+            scale = 1.
         for i in range(Ndat):
             val = self.mat_param[active][i]
+            hc = (val-v0)/scale
             if active=='work_hard':
                 dset = self.set[set_ind]
                 sc = self.mat_param['flow_stress'][set_ind,i,:,:]
                 label = 'PEEQ: '+str(val.round(decimals=4))
+                color = cmap(hc)
             else:
                 dset = self.set[i]
                 sc = self.mat_param['flow_stress'][i,0,:,:]
-                label = dset.name
-            plt.polar(sc[:,1], sc[:,0], color=cmap((val-v0)/scale), label=label)
+                label = dset.texture_name
+                color = (hc,0,1-hc)
+            plt.polar(sc[:,1], sc[:,0], label=label, color=color)
             plt.legend(loc=(1.04,0.7),fontsize=fontsize-2)
         if file is not None:
             plt.savefig(file+'.pdf', format='pdf', dpi=300)

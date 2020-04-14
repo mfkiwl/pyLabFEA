@@ -739,7 +739,10 @@
                 <span class="k">if</span> <span class="p">(</span><span class="n">el</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">sy</span><span class="o">!=</span><span class="kc">None</span><span class="p">):</span>  <span class="c1"># not necessary for elastic material</span>
                     <span class="n">peeq</span> <span class="o">=</span> <span class="n">eps_eq</span><span class="p">(</span><span class="n">el</span><span class="o">.</span><span class="n">epl</span><span class="o">+</span><span class="n">el</span><span class="o">.</span><span class="n">depl</span><span class="p">())</span> <span class="c1"># calculate equiv. plastic strain</span>
                     <span class="n">sig</span> <span class="o">=</span> <span class="n">el</span><span class="o">.</span><span class="n">sig</span><span class="o">+</span><span class="n">el</span><span class="o">.</span><span class="n">dsig</span><span class="p">()</span>
-                    <span class="n">hh</span> <span class="o">=</span> <span class="n">el</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">calc_yf</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">peeq</span><span class="o">=</span><span class="n">peeq</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">el</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">ML_yf</span> <span class="ow">and</span> <span class="n">el</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">msparam</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">hh</span> <span class="o">=</span> <span class="n">el</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">ML_full_yf</span><span class="p">(</span><span class="n">sig</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">hh</span> <span class="o">=</span> <span class="n">el</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">calc_yf</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">peeq</span><span class="o">=</span><span class="n">peeq</span><span class="p">)</span>
                     <span class="k">if</span> <span class="n">hh</span> <span class="o">&gt;</span> <span class="n">ptol</span><span class="p">:</span>
                         <span class="c1"># for debugging</span>
                         <span class="sd">&#39;&#39;&#39;h0 = el.Mat.calc_yf(el.sig,peeq=eps_eq(el.epl)) # calculate yield function at last converged step</span>
@@ -968,7 +971,7 @@
                         <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;yield function=&#39;</span><span class="p">,</span><span class="n">f</span><span class="p">,</span><span class="s1">&#39;residual forces on inner nodes=&#39;</span><span class="p">,</span><span class="n">fres</span><span class="p">[</span><span class="n">jin</span><span class="p">])</span>
                         <span class="n">el</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">element</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
                         <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;sig, disg, epl, depl, deps:&#39;</span><span class="p">,</span><span class="n">el</span><span class="o">.</span><span class="n">sig</span><span class="p">,</span> <span class="n">el</span><span class="o">.</span><span class="n">dsig</span><span class="p">(),</span> <span class="n">el</span><span class="o">.</span><span class="n">epl</span><span class="p">,</span> <span class="n">el</span><span class="o">.</span><span class="n">depl</span><span class="p">(),</span> <span class="n">el</span><span class="o">.</span><span class="n">deps</span><span class="p">())</span>
-                    <span class="k">if</span> <span class="n">i</span><span class="o">&gt;</span><span class="mi">7</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">i</span><span class="o">&gt;</span><span class="mi">7</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">conv</span><span class="p">:</span>
                         <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Warning: No convergence achieved, abandoning&#39;</span><span class="p">)</span>
                         <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;conv,i,f,ptol,dbcr,dbct&#39;</span><span class="p">,</span><span class="n">conv</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="n">f</span><span class="p">,</span><span class="n">ptol</span><span class="p">,</span><span class="n">dbcr</span><span class="p">,</span><span class="n">dbct</span><span class="p">)</span>
                         <span class="n">conv</span> <span class="o">=</span> <span class="kc">True</span>
@@ -983,6 +986,9 @@
                 <span class="n">el</span><span class="o">.</span><span class="n">eps</span> <span class="o">=</span> <span class="n">el</span><span class="o">.</span><span class="n">eps_t</span><span class="p">()</span>
                 <span class="n">el</span><span class="o">.</span><span class="n">epl</span> <span class="o">+=</span> <span class="n">el</span><span class="o">.</span><span class="n">depl</span><span class="p">()</span>
                 <span class="n">el</span><span class="o">.</span><span class="n">sig</span> <span class="o">+=</span> <span class="n">el</span><span class="o">.</span><span class="n">dsig</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">el</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">msparam</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">peeq</span> <span class="o">=</span> <span class="n">eps_eq</span><span class="p">(</span><span class="n">el</span><span class="o">.</span><span class="n">epl</span><span class="p">)</span>
+                    <span class="n">el</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">set_workhard</span><span class="p">(</span><span class="n">peeq</span><span class="p">)</span>
             <span class="s1">&#39;update load step&#39;</span>
             <span class="n">il</span> <span class="o">+=</span> <span class="mi">1</span>
             <span class="n">bcr0</span> <span class="o">+=</span> <span class="n">dbcr</span>
@@ -1321,7 +1327,7 @@
       &copy;2020, Alexander Hartmaier, ICAMS/Ruhr University Bochum, Germany.
       
       |
-      Powered by <a href="http://sphinx-doc.org/">Sphinx 2.4.4</a>
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.0.0</a>
       &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
       
     </div>
