@@ -23,7 +23,7 @@ a_vec = np.array([1., -0.5, -0.5])/np.sqrt(1.5)
 '''First unit vector spanning deviatoric stress plane (real axis)'''
 b_vec = np.array([0.,  0.5, -0.5])*np.sqrt(2)  
 '''Second unit vector spanning deviatoric stress plane (imaginary axis)'''
-ptol = 0.9
+ptol = 0.5
 '''Tolerance: Plastic yielding if yield function > ptol'''
 def seq_J2(sig):
     '''Calculate J2 equivalent stress from principal stresses
@@ -180,6 +180,35 @@ def eps_eq(eps):
     '''
     sh = np.shape(eps)
     N = len(eps)
+    if sh==(6,):
+        eeq = np.sqrt(np.dot(eps[0:3],eps[0:3])+2*np.dot(eps[3:6],eps[3:6]))
+    elif sh==(3,):
+        eeq = np.sqrt(np.sum(eps*eps))
+    elif sh==(N,3):
+        eeq = np.sqrt(np.sum(eps*eps,axis=1))
+    elif sh==(N,6):
+        eeq = np.sqrt(np.sum(eps[:,0:3]*eps[:,0:3],axis=1)+2*np.sum(eps[:,3:6]*eps[:,3:6],axis=1))
+    else:
+        print('*** eps_eq (N,sh): ',N,sh,sys._getframe().f_back.f_code.co_name)
+        sys.exit('Error in eps_eq: Format not supported')
+    return eeq
+    
+'''def eps_eq(eps):
+    'Calculate equivalent strain 
+    
+    Parameters
+    ----------
+    eps : (3,), (6,), (N,3) or (N,6) array
+         (3,) or (N,3): Principal strains;
+         (6,) or (N,6): Voigt strains
+         
+    Returns
+    -------
+    eeq : float or (N,) array
+        equivalent strains
+    '
+    sh = np.shape(eps)
+    N = len(eps)
     if sh==(6,) or sh==(3,):
         eps = np.array([eps])
         N = 1
@@ -190,7 +219,7 @@ def eps_eq(eps):
     #    eeq = np.sqrt(np.sum(eps[:,0:3]*eps[:,0:3],axis=1)+eps[:,0]*eps[:,1]+eps[:,1]*eps[:,2]+eps[:,2]*eps[:,0]+2*np.sum(eps[:,3:6]*eps[:,3:6],axis=1))
     if sh==(6,) or sh==(3,):
         eeq = eeq[0]
-    return eeq*2./np.sqrt(3.)
+    return eeq*2./np.sqrt(3.)'''
 
 '========================='
 'define class for stresses'

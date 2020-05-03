@@ -23,7 +23,7 @@ The pyLabFEA package is installed with the following command
 
 ::
 
-   $ python setup.py install --user
+   $ python -m pip install .
 
 After this, the package can by imported into python scripts with
 

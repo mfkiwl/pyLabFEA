@@ -107,6 +107,7 @@ class Model(object):
             print('Warning: Plane stress only defined for 2-d model')
             planestress = False
         self.planestress = planestress
+        #print('Model initialized')
         self.uleft = None  # create warning if user sets no value
         self.ubot = None  
         self.bct = None

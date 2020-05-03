@@ -224,6 +224,7 @@
 <span class="sd">        &#39;&#39;&#39;</span>
         <span class="n">sp</span> <span class="o">=</span> <span class="n">Stress</span><span class="p">(</span><span class="n">sig</span><span class="p">)</span><span class="o">.</span><span class="n">p</span>
         <span class="n">seq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">calc_seq</span><span class="p">(</span><span class="n">sp</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Full YF:seq, ld&#39;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">seq</span><span class="o">&lt;</span><span class="mf">0.01</span> <span class="ow">and</span> <span class="n">ld</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">yf</span> <span class="o">=</span> <span class="n">seq</span> <span class="o">-</span> <span class="mf">0.85</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">sflow</span>
         <span class="k">else</span><span class="p">:</span>

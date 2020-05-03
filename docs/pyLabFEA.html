@@ -276,7 +276,7 @@ if <code class="docutils literal notranslate"><span class="pre">Material</span><
 
 <dl class="py data">
 <dt id="basic.ptol">
-<code class="sig-prename descclassname">basic.</code><code class="sig-name descname">ptol</code><em class="property"> = 0.9</em><a class="headerlink" href="#basic.ptol" title="Permalink to this definition">¶</a></dt>
+<code class="sig-prename descclassname">basic.</code><code class="sig-name descname">ptol</code><em class="property"> = 0.5</em><a class="headerlink" href="#basic.ptol" title="Permalink to this definition">¶</a></dt>
 <dd><p>Plastic yielding if yield function &gt; ptol</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type</dt>
@@ -1902,7 +1902,7 @@ Email: <a class="reference external" href="mailto:alexander&#46;hartmaier&#37;&#
 distributed under GNU General Public License (GPLv3)</p>
 <dl class="py class">
 <dt id="data.Data">
-<em class="property">class </em><code class="sig-prename descclassname">data.</code><code class="sig-name descname">Data</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">msl</span></em>, <em class="sig-param"><span class="n">path_data</span></em>, <em class="sig-param"><span class="n">path_json</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">name</span><span class="o">=</span><span class="default_value">'Dataset'</span></em>, <em class="sig-param"><span class="n">nth</span><span class="o">=</span><span class="default_value">1</span></em>, <em class="sig-param"><span class="n">epl_crit</span><span class="o">=</span><span class="default_value">0.002</span></em>, <em class="sig-param"><span class="n">d_ep</span><span class="o">=</span><span class="default_value">0.0005</span></em>, <em class="sig-param"><span class="n">npe</span><span class="o">=</span><span class="default_value">50</span></em>, <em class="sig-param"><span class="n">plot</span><span class="o">=</span><span class="default_value">False</span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/data.html#Data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#data.Data" title="Permalink to this definition">¶</a></dt>
+<em class="property">class </em><code class="sig-prename descclassname">data.</code><code class="sig-name descname">Data</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">msl</span></em>, <em class="sig-param"><span class="n">path_data</span></em>, <em class="sig-param"><span class="n">path_json</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">name</span><span class="o">=</span><span class="default_value">'Dataset'</span></em>, <em class="sig-param"><span class="n">nth</span><span class="o">=</span><span class="default_value">1</span></em>, <em class="sig-param"><span class="n">epl_crit</span><span class="o">=</span><span class="default_value">0.002</span></em>, <em class="sig-param"><span class="n">d_ep</span><span class="o">=</span><span class="default_value">0.0005</span></em>, <em class="sig-param"><span class="n">npe</span><span class="o">=</span><span class="default_value">1</span></em>, <em class="sig-param"><span class="n">plot</span><span class="o">=</span><span class="default_value">False</span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/data.html#Data"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#data.Data" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.8)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>Define class for handling data from virtual mechanical tests in micromechanical
 simulations and data from physical mechanical tests on materials with various
@@ -2033,6 +2033,16 @@ evaluated (optional, default: 5.e-4)</p></li>
 </dd></dl>
 
 <dl class="py attribute">
+<dt id="data.Data.flow_stress">
+<code class="sig-name descname">flow_stress</code><a class="headerlink" href="#data.Data.flow_stress" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Type</dt>
+<dd class="field-odd"><p>Boolean</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
 <dt id="data.Data.mat_param">
 <code class="sig-name descname">mat_param</code><a class="headerlink" href="#data.Data.mat_param" title="Permalink to this definition">¶</a></dt>
 <dd><p>Contains available data for microstructural parameters (“texture”, “work_hard”, “flow_stress”) to be transfered to material.microstructure</p>
@@ -2102,7 +2112,7 @@ evaluated (optional, default: 5.e-4)</p></li>
 <dl class="py attribute">
 <dt id="data.Data.Set.Nlc">
 <code class="sig-name descname">Nlc</code><a class="headerlink" href="#data.Data.Set.Nlc" title="Permalink to this definition">¶</a></dt>
-<dd><p>Number of loadcase in raw data</p>
+<dd><p>Number of load cases in raw data</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type</dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.8)">int</a></p>
@@ -2269,12 +2279,6 @@ evaluated (optional, default: 5.e-4)</p></li>
 <dd><p>filter load cases of raw data</p>
 </dd></dl>
 
-<dl class="py attribute">
-<dt id="data.Data.Set.peeq_full">
-<code class="sig-name descname">peeq_full</code><em class="property"> = None</em><a class="headerlink" href="#data.Data.Set.peeq_full" title="Permalink to this definition">¶</a></dt>
-<dd><p>Consistency checks</p>
-</dd></dl>
-
 <dl class="py method">
 <dt id="data.Data.Set.plot_set">
 <code class="sig-name descname">plot_set</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">file</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">nth</span><span class="o">=</span><span class="default_value">18</span></em>, <em class="sig-param"><span class="n">fontsize</span><span class="o">=</span><span class="default_value">18</span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/data.html#Data.Set.plot_set"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#data.Data.Set.plot_set" title="Permalink to this definition">¶</a></dt>
@@ -2297,11 +2301,23 @@ raw data in deviatoric cyl. stress space</p>
 <dd><p>select data points with eqiv. stress in range [0.1,0.4]sy =&gt; elastic constants</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt id="data.Data.Set.ubc">
+<code class="sig-name descname">ubc</code><em class="property"> = None</em><a class="headerlink" href="#data.Data.Set.ubc" title="Permalink to this definition">¶</a></dt>
+<dd><p>calculate eqiv. stresses and strains and theta values</p>
+</dd></dl>
+
 </dd></dl>
 
 <dl class="py attribute">
 <dt id="id1">
-<code class="sig-name descname">mat_param</code><em class="property"> = None</em><a class="headerlink" href="#id1" title="Permalink to this definition">¶</a></dt>
+<code class="sig-name descname">flow_stress</code><em class="property"> = None</em><a class="headerlink" href="#id1" title="Permalink to this definition">¶</a></dt>
+<dd><p>import and pre-process data of all microstructure</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="id2">
+<code class="sig-name descname">mat_param</code><em class="property"> = None</em><a class="headerlink" href="#id2" title="Permalink to this definition">¶</a></dt>
 <dd><p>interpolate flow stress to fixed PEEQ grid</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type</dt>
@@ -2316,13 +2332,12 @@ raw data in deviatoric cyl. stress space</p>
 <dd><p>Plot yield loci of imported microstructures in database.</p>
 </dd></dl>
 
-<dl class="py attribute">
-<dt id="id2">
-<code class="sig-name descname">set</code><em class="property"> = None</em><a class="headerlink" href="#id2" title="Permalink to this definition">¶</a></dt>
-<dd><p>import and pre-process data of all microstructure</p>
 </dd></dl>
 
-</dd></dl>
+<dl class="py data">
+<dt id="data.ubc_names">
+<code class="sig-prename descclassname">data.</code><code class="sig-name descname">ubc_names</code><em class="property"> = ['StrainX', 'StrainY', 'StrainZ']</em><a class="headerlink" href="#data.ubc_names" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
 
 </div>
 </div>
