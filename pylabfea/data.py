@@ -98,32 +98,37 @@ class Data(object):
         prop = np.zeros(3)
         micr = []
         name = []
-        ttyp = []
         sfl  = []
         peeq_min = 10.  # minimum final equiv. plastic strain reached in sets
         Nlc_min = 1000  # minimum number of load cases reached in sets
+        ttyp = self.set[-1].texture_type
         for dset in self.set:
             prop += np.array([dset.sy, dset.E, dset.nu])
             micr.append(dset.texture_param)
             name.append(dset.texture_name)
-            ttyp.append(dset.texture_type)
             if self.flow_stress:
                 peeq_min = np.minimum(peeq_min, dset.peeq_full[-10])
                 Nlc_min = np.minimum(Nlc_min, 2*len(dset.load_case))
             else:
                 peeq_min = self.epc
                 Nlc_min = np.minimum(Nlc_min, dset.Nlc)
+            if dset.texture_type!=ttyp and dset.texture_type!='Random':
+                print('Warning: Different texture types mixed in data set', name)
         prop /= self.Nset  # average properties over all microstructures
         self.sy_av = prop[0] # information needed when material.plasticity is initiated 
         self.E_av  = prop[1] # information needed when material.elasticity is initiated 
         self.nu_av = prop[2]
+        print('\n###   Data set "%s"  ###' % (self.name))
+        print('Type of microstructure: ', ttyp)
+        print('Imported %i data sets for textures, with %i hardening stages and %i load cases each.' %(self.Nset, npe, Nlc_min))
+        print('Averaged properties : E_av=%5.2f GPa, nu_av=%4.2f, sy_av=%4.2f MPa' % (self.E_av/1000, self.nu_av, self.sy_av))
         self.mat_param = {      # this information of the data will be copied into the material upon definition of its microstructure
+            'ms_type'     : ttyp,      # unimodal texture type
             'Npl'         : npe,       # number of PEEQ values 
             'Nlc'         : Nlc_min,   # number of load cases covered in data (minimum of load cases reached over all sets)
             'Ntext'       : self.Nset, # number of microstructures covered by sets
-            'texture'     : np.array(micr),  # texture parameters for each set
-            'ms_name'     : name,      # list of names of differnt microstructures
-            'ms_type'     : ttyp,      # unimodal texture type
+            'texture'     : np.array(micr),  # texture parameter: mixture parameter ms_type wrt random
+            'tx_name'     : name,      # list of names of different textures
             'peeq_max'    : peeq_min,  # maximum PEEQ covered in data (must be minimum of value reached over all sets)
             'epc'         : epl_crit,  # critical PEEQ for with yield stress is defined 
             'work_hard'   : np.linspace(epl_crit,peeq_min,npe) # values of PEEQ for which flow stresses are available
@@ -492,7 +497,7 @@ class Data(object):
                 plt.savefig(file+self.name+'.pdf', format='pdf', dpi=300)
             plt.show()
     
-    def plot_yield_locus(self, active, set_ind=0, file=None, fontsize=18):
+    def plot_yield_locus(self, active, set_ind=0, file=None, fontsize=18, scatter=False):
         '''Plot yield loci of imported microstructures in database.
         '''
         fig = plt.figure(figsize=(15, 8))
@@ -516,6 +521,8 @@ class Data(object):
                 sc = self.mat_param['flow_stress'][i,0,:,:]
                 label = dset.texture_name
                 color = (hc,0,1-hc)
+            if scatter:
+                plt.polar(sc[:,1], sc[:,0], '.r', label=label)
             plt.polar(sc[:,1], sc[:,0], label=label, color=color)
             plt.legend(loc=(1.04,0.7),fontsize=fontsize-2)
         if file is not None:
