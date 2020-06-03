@@ -1,6 +1,10 @@
 {
   "Owner": "Abhishek",
   "Date": "19 March 2020",
+  "Class"       : "Flow_Stress", 
+  "Texture_name": "100%_Random",
+  "Texture_type": "Random",
+  "Texture_index": 0.0,
   "Texture_text": "Fiber texture paralles to sample X direction",
   "Fourier_coeff": "texture1/FourierCoeff.txt",
   "Kernel_function": "texture1/psired.mat",

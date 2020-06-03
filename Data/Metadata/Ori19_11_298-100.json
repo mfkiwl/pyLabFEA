@@ -1,0 +1,18 @@
+{
+  "Owner": "Abhishek",
+  "Date": "22 May 2020",
+  "Texture_name": "Ori19_11_298-100",
+  "Texture_type": "Ori19_11_298",
+  "Texture_index" : 1.0,
+  "Class"       : "Yield_Stress", 
+  "Method"      : "Taylor", 
+  "Prop_E"  : 2.1e5,
+  "Prop_nu" : 0.3,  
+  "Optimized_scaling_factor": "18.925",
+  "Orientation_set": "-",
+  "Look_up_Table": "taylorFacData.mat",
+  "CSV_data": "Taylor_method/Ori19_11_298-100/Outfiles.csv",
+  "CSV_format": "S11;S22;S33;S12;S13;S23;theta",
+  "CSV_separator": ";",
+  "CSV_test": ""
+}

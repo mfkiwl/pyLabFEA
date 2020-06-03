@@ -41,8 +41,10 @@ class Material(object):
         Existence of trained machine learning (ML) yield function (default: False)
     ML_grad : Boolean
         Existence of trained ML gradient (default: False)
-    Tresca  : Boolean
+    tresca  : Boolean
         Indicate if Tresca equivalent stress should be used (default: False)
+    barlat  : Boolean
+        Indicate if Barlat equivalent stress should be used (default: False)
     msg     : dictionary
         Messages returned
     prop    : dictionary
@@ -91,7 +93,8 @@ class Material(object):
         self.sy = None  # Elasticity will be considered unless sy is set
         self.ML_yf = False # use conventional plasticity unless trained ML functions exists
         self.ML_grad = False # use conventional gradient unless ML function exists
-        self.Tresca = False  # use J2 or Hill equivalent stress unless defined otherwise
+        self.tresca = False  # use J2 or Hill equivalent stress unless defined otherwise
+        self.barlat = False  # Use Barlat equiv. stress if parameters are given
         self.name = name
         self.msparam = None  # parameters for primary microstructure
         self.whdat = False
@@ -208,7 +211,7 @@ class Material(object):
             x0 = 1.
             if ld[0]*ld[1] < -1.e-5:
                 x0 = 0.5
-                if self.Tresca:
+                if self.tresca:
                     x0 = 0.4
             x1, infodict, ier, msg = fsolve(self.find_yloc, x0, args=ld, xtol=1.e-5, full_output=True)
             y1 = infodict['fvec']
@@ -635,20 +638,28 @@ class Material(object):
         '''
         N = len(sprinc)
         sh = np.shape(sprinc)
-        if sh==(3,):
+        sig = sprinc
+        if sh==(3,) or sh==(6,):
             N = 1 # sprinc is single principle stress vector
             sprinc=np.array([sprinc])
         elif sh==(N,6):
-            sig = sprinc
             sprinc=np.zeros((N,3))
             for i in range(N):
                 sprinc[i,:] = Stress(sig[i,:]).p
         elif sh!=(N,3):
             print('*** calc_seq: N, sh', N, sh, sys._getframe().f_back.f_code.co_name)
             sys.exit('Error: Unknown format of stress in calc_seq')
-        if self.Tresca:
+        if self.tresca:
+            'calculate Tresca euiv. stress'
             seq = np.amax(sprinc,axis=1) - np.amin(sprinc,axis=1)
+        elif self.barlat:
+            seq = np.zeros(N)
+            if sh!=(N,6) and sh!=(6,):
+                sig = np.append(sig,np.zeros((N,3)), axis=1)
+            for i in range(N):
+                seq[i] = self.calc_seqB(sig[i,:])
         else:
+            'calculate Hill or J2 equiv. stress (latter is default)'
             d12 = sprinc[:,0] - sprinc[:,1]
             d23 = sprinc[:,1] - sprinc[:,2]
             d31 = sprinc[:,2] - sprinc[:,0]
@@ -665,8 +676,33 @@ class Material(object):
             # consider hydrostatic stresses for tension-compression assymetry
             I1  = np.sum(sprinc[:,0:3], axis=1)/3.
             seq  = np.sqrt(I2) + d0*I1   # generalized eqiv. stress
-        if sh==(3,):
+        if sh==(3,) or sh==(6,):
             seq = seq[0]
+        return seq
+    
+    def calc_seqB(self, sv):
+        '''Calculate equivalent stress based on Yld2004-18p yield function proposed by Barlat et al, Int. J. Plast. 21 (2005) 1009
+        
+        Parameters
+        ----------
+        sv : (6,) array
+            Voigt stress tensor
+            
+        Returns
+        -------
+        seq : float
+            Equivalent stress
+        '''
+        sdev = Stress(sv).dev
+        st1  = self.Bar_m1 @ sdev  # first linearly transformed stress deviator s_tilda_'
+        st2  = self.Bar_m2 @ sdev  # second linearly transformed stress deviator s_tilda_''
+        Stp1 = Stress(st1).princ  # principal stress of transformed stress
+        Stp2 = Stress(st2).princ
+        a = self.barlat_exp
+        seq  = np.abs(Stp1[0]-Stp2[0])**a  + np.abs(Stp1[0]-Stp2[1])**a  + np.abs(Stp1[0]-Stp2[2])**a + \
+               np.abs(Stp1[1]-Stp2[0])**a  + np.abs(Stp1[1]-Stp2[1])**a  + np.abs(Stp1[1]-Stp2[2])**a + \
+               np.abs(Stp1[2]-Stp2[0])**a  + np.abs(Stp1[2]-Stp2[1])**a  + np.abs(Stp1[2]-Stp2[2])**a  
+        seq  = 0.5*seq**(1./a)
         return seq
 
     def elasticity(self, C11=None, C12=None, C44=None, # standard parameters for crystals with cubic symmetry
@@ -721,7 +757,7 @@ class Material(object):
         else:
             sys.exit('Error: Inconsistent definition of material parameters')
 
-    def plasticity(self, sy=None, hill=[1., 1., 1.], drucker=0., khard=0., Tresca=False):
+    def plasticity(self, sy=None, hill=[1., 1., 1.], drucker=0., khard=0., tresca=False, barlat=None, barlat_exp=None):
         '''Define plastic material parameters; anisotropic Hill-like and Drucker-like
         behavior is supported
 
@@ -735,8 +771,12 @@ class Material(object):
             Parameter for Drucker-like tension-compression asymmetry (optional, default: 0)
         khard: float
             Paramater for linear strain hardening (optional, default: 0)
-        Tresca : Boolean
+        tresca : Boolean
             Indicate if Tresca equivalent stress should be used (optional, default: False)
+        barlat : (18,) array
+            Array with parameters for Barlat Yld2004-18p yield function (optional)
+        barlat_exp : int
+            Exponent for Barlat Yld2004-18p yield function (optional)
         '''
         self.sy0 = sy  # store initial yield strength of material
         self.sy = sy   # current yield strength (may be modified by texture)
@@ -745,7 +785,24 @@ class Material(object):
         self.Hpr = khard/(1.-khard/self.E)  # constant for w.h.
         self.hill = np.array(hill)  # Hill anisotropic parameters
         self.drucker = drucker   # Drucker-Prager parameter: weight of hydrostatic stress
-        self.Tresca = Tresca
+        self.tresca = tresca
+        if barlat is not None:
+            self.barlat = True
+            self.Bar_m1 = np.array([[      0.,     -barlat[0], -barlat[1],     0.,       0.,  0.],
+                         [ -barlat[2],     0.,     -barlat[3],     0.,         0.,       0.],
+                         [ -barlat[4],  -barlat[5],    0.,         0.,         0.,       0.],
+                         [   0.,           0.,         0.,      barlat[6],     0.,       0.],
+                         [   0.,           0.,         0.,         0.,       barlat[7],  0.],
+                         [   0.,           0.,         0.,         0.,         0.,   barlat[8]]])
+        
+            #  Cdouble dash matrix
+            self.Bar_m2 = np.array([[   0.,  -barlat[9],  -barlat[10],   0.,  0.,  0.],
+                         [ -barlat[11],    0.,  -barlat[12],   0.,  0.,  0.],
+                         [ -barlat[13],  -barlat[14],    0.,   0.,  0.,  0.],
+                         [   0.,    0.,    0.,  barlat[15],  0.,  0.],
+                         [   0.,    0.,    0.,   0., barlat[16],  0.],
+                         [   0.,    0.,    0.,   0.,  0., barlat[17]]])
+            self.barlat_exp = barlat_exp
 
     def microstructure(self, param, grain_size=None, grain_shape=None, porosity=None):
         '''Define microstructural parameters of the material: crstallographic texture, grain size, grain shape
@@ -1146,7 +1203,7 @@ class Material(object):
         label : str
             Label for yield function (optional, default: own name)
         data  : (N,3) array
-            Stress data to be used for scatter plot (optional)
+            Principle stress data to be used for scatter plot (optional)
         trange : float
             Cut-off for data to be plotted on slice (optional, default: 1.e-2)
         xstart : float
@@ -1485,3 +1542,85 @@ class Material(object):
                 plt.savefig(file+'Hill.pdf', format='pdf', dpi=300)
             plt.show()
         return
+    
+    def polar_plot_yl(self, Na=72, cmat=None, data=None, dname='reference', scaling=None, 
+                      field=False, predict=False, cbar=False, Np=100, file=None):
+        '''Plot yield locus as polar plot in deviatoric stress plane
+        
+        Parameters
+        ----------
+        Na : int
+            Number of angles on which yield locus is evaluated (optional, default: 72)
+        cmat : list of materials
+            Materials of which YL is plotted in same plot with same scaling (optional)
+        data : (N,3) array
+            Array of principle stress added to plot (optional)
+        dname : str
+            Label for data (optional, default: reference)
+        scaling : float
+            Scaling factor for stresses (optional)
+        field : Boolean
+            Field of decision function is plotted (optional, default: False)
+        predict : Boolean
+            Plot ML prediction (-1,1), otherwise decision fucntion is plotted (optional, default: False)
+        Np      : int
+            Number of points per axis for field plot (optional, default: 100)
+        cbar    : Boolean
+            Plot colorbar for field (optional, default: False)
+        file  : str
+            Name of PDF file to which plot is saved
+            
+        '''
+        if scaling is None:
+            sf = 1.
+        else:
+            sf = 1./scaling
+        fig  = plt.figure(figsize=(12,9))
+        ax = fig.add_axes([0,0,1,1,], projection='polar')
+        if field:
+            xx, yy = np.meshgrid(np.linspace(-1., 1., Np),np.linspace(-1, 1., Np))
+            #hh = []
+            #for i in range(2,self.Ndof):
+            #    hh.append(np.zeros(Np*Np))
+            feat = np.c_[yy.ravel(),xx.ravel()]
+            cmap = plt.cm.get_cmap('PuOr_r')  #'bwr' and 'PuOr_r' are good choices
+            if predict:
+                Z = self.svm_yf.predict(feat)
+            else:
+                Z = self.svm_yf.decision_function(feat)
+            'symmetrize Z values'
+            zmin = np.amin(Z)
+            zmax = np.amax(Z)
+            if (-zmin < zmax):
+                Z[np.nonzero(Z>-zmin)] = -zmin
+            else:
+                Z[np.nonzero(Z<-zmax)] = -zmax
+            Z = Z.reshape(xx.shape)
+            im = ax.pcolormesh(xx*np.pi,(yy+1.)*self.scale_seq*sf,Z, cmap=cmap)
+            if cbar:
+                cbar = ax.figure.colorbar(im, ax=ax)
+                cbar.ax.set_ylabel("yield function (MPa)", rotation=-90)
+        'find norm of princ. stess vector lying on yield surface'
+        theta = np.linspace(0.,2*np.pi,Na)
+        snorm = sp_cart(np.array([self.sy*np.ones(Na)*np.sqrt(1.5), theta]).T)
+        x1 = fsolve(self.find_yloc, np.ones(Na), args=snorm, xtol=1.e-5)
+        sig = snorm*np.array([x1,x1,x1]).T
+        s_yld = seq_J2(sig)
+        ax.plot(theta, s_yld*sf, '-k', linewidth=2, label=self.name)
+        if cmat is not None:
+            N = len(cmat)
+            cmap = plt.cm.get_cmap('gist_rainbow')
+            i=0
+            for mat in cmat:
+                x1 = fsolve(mat.find_yloc, np.ones(Na), args=snorm, xtol=1.e-5)
+                sig = snorm*np.array([x1,x1,x1]).T
+                s_yld = seq_J2(sig)
+                ax.plot(theta, s_yld*sf, color=cmap(i/N), linewidth=2, label=mat.name)
+                i += 1
+        if data is not None:
+            ax.plot(data[:,1],data[:,0]*sf,'.b', label=dname)
+
+        plt.legend(loc=(.9,0.95),fontsize=14)
+        if file is not None:
+            plt.savefig(file+'.pdf', format='pdf', dpi=300)
+        plt.show()

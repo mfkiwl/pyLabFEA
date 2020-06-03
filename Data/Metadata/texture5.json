@@ -1,0 +1,21 @@
+{
+  "Owner": "Abhishek",
+  "Date": "07 April 2020",
+  "Class"       : "Flow_Stress", 
+  "Texture_name": "100%_Random",
+  "Texture_type": "Random",
+  "Texture_index": 0.0,
+  "Fourier_coeff": "texture5/Fourier_coeff.csv",
+  "Fourier_coeff_format": "Harmonic degree;Fourier_coeff real part + Fourier_coeff imaginary part",
+  "Fourier_coeff_CSV_separator": ";",
+  "Kernel_function": "de la Vallee Poussin kernel with half-width at half height : 15 degree",
+  "Orientation_set": "texture5/ori.csv",
+  "ABQ_version": 6.14,
+  "ABQ_input": "inputfile_model.inp,Material.inp,remPart.inp",
+  "CP_version": 1.0,
+  "CP_path": "umat_files/umat.f",
+  "CSV_data": "texture5/Outfiles.csv",
+  "CSV_format": "S11;S22;S33;S12;S13;S23;Ee11;Ee22;Ee33;Ee12;Ee13;Ee23;Ep11;Ep22;Ep33;Ep12;Ep13;Ep23;E11;E22;E33;E12;E13;E23;StrainX;StrainY;StrainZ;theta",
+  "CSV_separator": ";",
+  "CSV_test": ""
+}

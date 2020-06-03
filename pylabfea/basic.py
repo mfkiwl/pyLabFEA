@@ -258,6 +258,7 @@ class Stress(object):
         self.princ, self.evec = np.linalg.eig(self.tens)
         self.p=self.princ
         self.h=self.hydrostatic = np.sum(self.p)/3.
+        self.d=self.dev = sv - np.array([self.h, self.h, self.h, 0., 0., 0.])
             
     def seq(self, mat):
         '''calculate Hill-type equivalent stress, invokes corresponding method of class ``Material``

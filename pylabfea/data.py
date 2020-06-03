@@ -18,9 +18,7 @@ from pylabfea.material import Material
 import numpy as np
 import json
 import pandas as pd
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 import sys
 
 sig_names = ['S11','S22','S33']
@@ -71,7 +69,7 @@ class Data(object):
     sy_av : float
     E_av  : float
     nu_av : float
-    flow_stress : Boolean
+    flow_stress : cyl. stress
     mat_param : dictionary
         Contains available data for microstructural parameters ("texture", "work_hard", "flow_stress") to be transfered to material.microstructure
     
@@ -214,13 +212,13 @@ class Data(object):
         texture_param : float
             Microstructure parameter for texture
         eps, epl, eel, sig, ubc : (N,) array
-        sfc_   : (Ndat,) array
+        sfc_   : (Ndat,3) array
             Filtered cyl. stress tensor around yield point
         peeq_  : (Ndat,) array
             Filtered equiv. plastic strain around yield point
-        ubc_   : (Ndat,) array
+        ubc_   : (Ndat,3) array
             Filtered boundary condition vector around yield point
-        sig_   : (Ndat,) array
+        sig_   : (Ndat,3) array
             Filtered princ. stress tensor around yield point
         f_yld_ : (Ndat,) array
             Categorial yield function of data points around yield point ("-1": elastic, "+1": plastic)
@@ -466,9 +464,9 @@ class Data(object):
             fontsize : 20
                 Fontsize for plot (optional, default: 20)
             '''
-            cmap = mpl.cm.get_cmap('viridis', 10)
-            fig = plt.figure(figsize=(16,7))
-            plt.subplots_adjust(wspace=0.6)
+            cmap = plt.cm.get_cmap('viridis', 10)
+            fig = plt.figure(figsize=(18,7))
+            plt.subplots_adjust(wspace=0.2)
             N = len(self.load_case)
             ax = plt.subplot(1,2,1)
             for i in range(0,N,nth):
@@ -487,21 +485,21 @@ class Data(object):
             plt.plot(self.syc[:,1], self.syc[:,0], '-k')
             plt.plot([-np.pi, np.pi], [self.sy, self.sy], '--k')
             plt.legend(['raw data above yield point', 'raw data below yield point', 
-                           'interpolated yield strength', 'average yield strength'],loc=(1.04,0.7),fontsize=fontsize-2)
+                           'interpolated yield strength', 'average yield strength'],loc=(1.04,0.8),fontsize=fontsize-2)
             plt.title('Raw data '+self.name, fontsize=fontsize)
             plt.xlabel(r'$\theta$ (rad)', fontsize=fontsize)
             plt.ylabel(r'$\sigma_{eq}$ (MPa)', fontsize=fontsize)
             plt.tick_params(axis="x", labelsize=fontsize-4)
             plt.tick_params(axis="y", labelsize=fontsize-4)
             if file is not None:
-                plt.savefig(file+self.name+'.pdf', format='pdf', dpi=300)
+                plt.savefig(file+self.texture_name+'.pdf', format='pdf', dpi=300)
             plt.show()
     
     def plot_yield_locus(self, active, set_ind=0, file=None, fontsize=18, scatter=False):
         '''Plot yield loci of imported microstructures in database.
         '''
         fig = plt.figure(figsize=(15, 8))
-        cmap = mpl.cm.get_cmap('viridis', 10)
+        cmap = plt.cm.get_cmap('viridis', 10)
         ms_max = np.amax(self.mat_param[active])
         Ndat = len(self.mat_param[active])
         v0 = self.mat_param[active][0]
