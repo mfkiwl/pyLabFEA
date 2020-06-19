@@ -956,6 +956,7 @@ class Model(object):
                 if el.Mat.msparam is not None:
                     peeq = eps_eq(el.epl)
                     el.Mat.set_workhard(peeq)
+            
             'update load step'
             il += 1
             bcr0 += dbcr

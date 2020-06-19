@@ -100,6 +100,7 @@ class Material(object):
         self.whdat = False
         self.txdat = False
         self.Ndof = 2
+        self.smooth = False # smoothing of ML gradient
         self.msg = {
             'yield_fct' : None,
             'gradient'  : None
@@ -156,7 +157,8 @@ class Material(object):
             x[:,0] = seq_J2(sig)/self.scale_seq - 1.
             x[:,1] = polar_ang(sig)/np.pi
             if self.whdat:
-                x[:,2] = self.wh_cur/self.scale_wh - 1.
+                #self.set_workhard(peeq)
+                x[:,2] = peeq/self.scale_wh - 1.
             if self.txdat:
                 ih = 3 if self.whdat else 2
                 for i in range(self.Nset):
@@ -275,7 +277,7 @@ class Material(object):
             self.scale_text = np.zeros(self.Nset)
             for i in range(self.Nset):
                 self.scale_seq += np.average(self.msparam[i]['flow_seq_av'])/self.Nset
-                self.scale_wh  += np.average(self.msparam[i]['work_hard'])/self.Nset
+                self.scale_wh  += (np.average(self.msparam[i]['work_hard'])-self.epc)/self.Nset
                 self.scale_text[i] = np.average(self.msparam[i]['texture'])
         N = len(x)
         sh = np.shape(x)
@@ -423,7 +425,7 @@ class Material(object):
                         i1 = i0 + N0
                         xt[i0:i1,0:2] = sc_train
                         if self.whdat:
-                            xt[i0:i1,2] = ms['work_hard'][j]
+                            xt[i0:i1,2] = ms['work_hard'][j] - self.epc
                         if self.txdat:
                             ih = 3 if self.whdat else 2
                             xt[i0:i1,ih+m] = ms['texture'][k]
@@ -465,7 +467,7 @@ class Material(object):
                     ind = list(range((j+k*Npl)*N0,(j+k*Npl+1)*N0,int(0.5*N0/Nlc)))
                     y_test = yt[ind]
                     x_test = xt[ind,:]
-                    peeq = self.msparam[0]['work_hard'][j] - self.msparam[0]['epc']
+                    peeq = self.msparam[0]['work_hard'][j] - self.epc
                     self.set_workhard(peeq)
                     iel = np.nonzero(y_test<0.)[0]
                     ipl = np.nonzero(np.logical_and(y_test>=0., x_test[:,0]<self.sflow*1.5))[0]
@@ -558,11 +560,14 @@ class Material(object):
                     J[:,1] = np.real(z)
                 return J
             N = len(sig)
+            if self.smooth:
+                dthet = np.zeros((N,self.Ndof))
+                dthet[:,1] = np.pi/360.  # smoothen gradient over 0.5°
             x = np.zeros((N,self.Ndof))
             x[:,0] = seq_J2(sig)/self.scale_seq - 1.
             x[:,1] = polar_ang(sig)/np.pi
             if self.whdat:
-                x[:,2] = (peeq+self.epc)/self.scale_wh - 1.
+                x[:,2] = peeq/self.scale_wh - 1.
             if self.txdat:
                 ih = 3 if self.whdat else 2
                 x[:,ih:ih+self.Nset] = [self.tx_cur[i]/self.scale_text[i] - 1. for i in range(self.Nset)]
@@ -570,6 +575,10 @@ class Material(object):
             sv = self.svm_yf.support_vectors_
             for i in range(N):
                 dKdt = np.sum(dc*grad_rbf(x[i,:],sv))
+                if self.smooth:
+                    dKdt_l = np.sum(dc*grad_rbf(x[i,:]-dthet,sv))
+                    dKdt_r = np.sum(dc*grad_rbf(x[i,:]+dthet,sv))
+                    dKdt = 0.25*(2*dKdt + dKdt_l + dKdt_r)
                 fgrad[i,:] = Jac(sig[i,:])@np.array([1,dKdt,0])
             self.msg['gradient'] = 'gradient to ML_yf'
         else:
@@ -886,7 +895,6 @@ class Material(object):
         self.sy = 0.
         self.Hpr = 0.
         self.khard = 0.
-        self.epc = 0.
         index = []
         i=0
         for ms in self.msparam:
@@ -958,12 +966,12 @@ class Material(object):
                     ds = ms['flow_seq_av'][self.ms_index[i],i1] - ms['flow_seq_av'][self.ms_index[i],i0] 
                     de = ms['work_hard'][i1] - ms['work_hard'][i0]
                     Hpr =  ds/de # linear work hardening rate b/w values for w.h. in data
-                    khard = self.Hpr/(1.+self.Hpr/self.E)  # constant for w.h.
+                    khard = Hpr/(1.+Hpr/self.E)  # constant for w.h.
                     self.Hpr += Hpr*wght[i]
                     self.khard += khard*wght[i]
             i+=1
         if verb:
-            print('Currect work hardening parameter:', self.wh_cur)
+            print('Current work hardening parameter:', self.wh_cur)
             print('Current flow stress (MPa): ', self.sflow)
             print('Yield strength:',self.sy,'MPa')
             print('Work hardening modulus:',self.khard,'MPa')
@@ -1123,7 +1131,7 @@ class Material(object):
             Yield function evaluated at sig=x.sp
         '''
         y = np.array([x,x,x]).transpose()
-        f = self.calc_yf(y*sp)
+        f = self.calc_yf(y*sp,peeq=self.wh_cur-self.epc)
         return f
 
     def ellipsis(self, a=1., b=1./np.sqrt(3.), n=72):

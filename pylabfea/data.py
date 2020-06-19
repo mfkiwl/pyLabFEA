@@ -21,11 +21,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import sys
 
-sig_names = ['S11','S22','S33']
+sig_names = ['S11','S22','S33']#,'S23','S13','S12']
 theta_name = ['theta']
-epl_names = ['Ep11','Ep22','Ep33']
-eps_names = ['E11','E22','E33']
-eel_names = ['Ee11','Ee22','Ee33']
+epl_names = ['Ep11','Ep22','Ep33','Ep23','Ep13','Ep12']
+eps_names = ['E11','E22','E33','E23','E13','E12']
+eel_names = ['Ee11','Ee22','Ee33','Ee23','Ee13','Ee12']
 ubc_names = ['StrainX', 'StrainY', 'StrainZ']
             
 '================='
@@ -75,7 +75,7 @@ class Data(object):
     
     '''
     def __init__(self, msl, path_data, path_json=None, name='Dataset', nth=1, 
-                            epl_crit=2.e-3, d_ep=5.e-4, npe=1, plot=False):
+                            epl_crit=2.e-3, d_ep=5.e-4, epl_max=0.03, npe=1, plot=False):
         self.msl  = msl
         self.Nset = len(msl)
         self.name = name
@@ -113,6 +113,7 @@ class Data(object):
             if dset.texture_type!=ttyp and dset.texture_type!='Random':
                 print('Warning: Different texture types mixed in data set', name)
         prop /= self.Nset  # average properties over all microstructures
+        peeq_min = np.minimum(peeq_min, epl_max)
         self.sy_av = prop[0] # information needed when material.plasticity is initiated 
         self.E_av  = prop[1] # information needed when material.elasticity is initiated 
         self.nu_av = prop[2]
@@ -131,6 +132,7 @@ class Data(object):
             'epc'         : epl_crit,  # critical PEEQ for with yield stress is defined 
             'work_hard'   : np.linspace(epl_crit,peeq_min,npe) # values of PEEQ for which flow stresses are available
         }
+        print(self.mat_param)
         'for each load case in each set: interpolate flow stress to fixed PEEQ grid'
         Nlc = self.mat_param['Nlc']
         sf = np.zeros((self.Nset,npe,Nlc,3))  
@@ -292,6 +294,7 @@ class Data(object):
                 'calculate eqiv. stresses and strains and theta values'
                 self.peeq_full = eps_eq(self.epl)  # calculate equiv. plastic strain from data
             self.N = np.shape(self.sig)[0]
+            print('***Shapes',self.eps.shape)
             print('\n*** Microstructure:',self.name,'***')
             print(self.N,' data points imported into database ',self.db.name)
             if db.flow_stress:
