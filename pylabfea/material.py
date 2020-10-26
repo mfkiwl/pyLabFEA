@@ -7,7 +7,7 @@ under various loading conditions.
 
 uses NumPy, MatPlotLib, sklearn and pyLabFEA.model
 
-Version: 2.1 (2020-04-01)
+Version: 3.2 (2020-10-26)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, April 2020
 Email: alexander.hartmaier@rub.de
 distributed under GNU General Public License (GPLv3)'''
@@ -83,8 +83,10 @@ class Material(object):
     msparam :
         Store data on microstructure parameters: 'Npl', 'Nlc, 'Ntext', 'texture', 'peeq_max', 'work_hard', 'flow_stress' 
         are obtained from data analysis module. Other parameters can be added.
+    msg :
+        Messages that can be retrieved: 'yield_fct', 'gradient', 'nsteps'
     '''
-    'Methods'
+    #Methods
     #elasticity: define elastic material parameters C11, C12, C44
     #plasticity: define plastic material parameter sy, khard
     #epl_dot: calculate plastic strain rate
@@ -103,7 +105,8 @@ class Material(object):
         self.smooth = False # smoothing of ML gradient
         self.msg = {
             'yield_fct' : None,
-            'gradient'  : None
+            'gradient'  : None,
+            'nsteps' : 0
         }
         self.prop = {    # stores strength and stress-strain data along given load paths
             'stx'   : {'ys':None,'seq':None,'eeq':None,'peeq':None,'style':None,'name':None},
@@ -124,6 +127,143 @@ class Material(object):
             'ect'   : {'sig':None,'eps':None,'epl':None}
         }
 
+    def response(self, sig, epl, deps, CV, maxit=50):
+        '''Calculate non-linear material response to deformation defined by load step, 
+        corresponds to user material function.
+        
+        Parameters
+        ----------
+        sig : (6,) array
+            Voigt stress tensor at start of load step (=end of previous load step)
+        epl : (6,) array
+            Voigt plastic strain tensor at start of load step
+        deps : (6,) array
+            Voigt strain tensor defining deformation (=load step)
+        CV : (6,6) array
+            Voigt elastic tensor
+        maxit : int
+            Maximum number of iteration steps (optional, default= 5)
+            
+        Returns
+        -------
+        fy1 : real
+            Yield function at end of load step (indicates whether convergence is reached)
+        sig : (6,) array
+            Voigt stress tensor at end of load step
+        depl : (6,) array
+            Voigt tensor of plastic strain increment at end of load step
+        grad_stiff : (6,6) array
+            Tangent material stiffness matrix (d_sig/d_eps) at end of load step
+        
+        '''
+        #initialize quantities needed
+        toler = ptol*self.sflow
+        sig = np.array(sig) # produce copy of sig to avoid changes to original
+        depl = np.zeros(6) # initialize plastic strain increment
+        peeq = Strain(epl).eeq() # equiv. plastic strain at start of step
+        dsig = CV @ deps   # predictor of stress increment
+        st_scal = 1.
+        niter = 0
+        
+        #evaluate yield function for elastic predictor step
+        if self.ML_yf:
+            fy1 = self.ML_full_yf(sig+dsig)
+        else:
+            fy1 = self.calc_yf(sig+dsig, peeq=peeq)
+        if fy1 < toler:
+            # purely elastic load step
+            sig += dsig # update stress
+            grad_stiff = np.array(CV)  # gradient stiffness is elastic stiffness
+        else:
+            # elastic predictor step reaches to plastic regime
+            fy0 = self.calc_yf(sig)  # yield fct. at start of load step
+            if fy0 < -0.15:
+                # load step starts in elastic regime and ends in plastic regime
+                # must be splitted into elastic and plastic parts
+                if self.ML_yf:
+                    #for categorial ML yield function, calculate fy0 as distance to yield surface
+                    fy0 = self.ML_full_yf(sig, ld=Stress(dsig).p)  # distance of initial stress state to yield locus
+                st_scal += fy0/self.calc_seq(Stress(dsig).p)
+                deps_el = deps*(1.-st_scal) # calculate elastic part of load step
+                sig += CV @ deps_el  # update stress which lies now on yield locus
+                grad_stiff = CV*(1.-st_scal)  # contribution to gradient stiffness 
+                deps_r = deps - deps_el # remaining load step
+            else:
+                # load step starts on yield locus
+                deps_r = np.array(deps) # create new variable to prevent deps from being changed
+                grad_stiff = np.zeros((6,6)) # initialize stiffness matrix
+            
+            # do a first trial step with full deps_r
+            ddepl = self.epl_dot(sig, epl, CV, deps_r) # plastic strain increment
+            peeqt = Strain(epl+depl+ddepl).eeq()
+            t_stiff = self.C_tan(sig, CV)  # tangent stiffness
+            dsig = t_stiff @ deps_r  # update stress with current tangent stiffness
+            # evaluate yield function at the end of this step
+            if self.ML_yf: # and self.msparam is not None:
+                fy1 = self.ML_full_yf(sig+dsig, ld=Stress(dsig).p)
+            else:
+                fy1 = self.calc_yf(sig+dsig, peeq=peeqt)
+            
+            # if remaining step deps_r is too large, better to subdivide it
+            if fy1 > toler:
+                #subdivide load step
+                deps_r /= maxit
+                nsteps = maxit
+            else:
+                nsteps = 1
+            
+            for niter in range(nsteps): 
+                # at this stage, the initial stress sig should lie on the yield locus
+                # and the yield function fy1 points outside
+                # in the following, the remaining load step is performed 
+                ddepl = self.epl_dot(sig, epl, CV, deps_r) # plastic strain increment
+                peeq = Strain(epl+depl+ddepl).eeq()
+                t_stiff = self.C_tan(sig, CV)  # tangent stiffness
+                dsig = t_stiff @ deps_r  # update stress with current tangent stiffness
+                sig += dsig
+                # evaluate yield function at the end of this step
+                if self.ML_yf: # and self.msparam is not None:
+                    fy1 = self.ML_full_yf(sig, ld=Stress(dsig).p)
+                else:
+                    fy1 = self.calc_yf(sig, peeq=peeq)
+                
+                if fy1 > toler:
+                    # the step size was too large because it ends outside of the yield locus
+                    # a correction is needed
+                    # total strain must remain constant during this correction
+                    #calculate compliance tensor
+                    SV = np.zeros((6,6))
+                    i = (3 if CV[2,2]>1. else 2)
+                    hh = np.linalg.inv(CV[0:i,0:i]) # calculate inverse of sub-tensor
+                    SV[0:i,0:i] = hh
+                    for i in range(3,6):
+                        if CV[i,i]>1.: SV[i,i] = 1./CV[i,i]
+                    
+                    dsig = sig*fy1/self.calc_seq(Stress(sig).p) # excess stress tensor
+                    sig -= dsig   # reduce stress about excess stress
+                    ddepl += SV @ dsig # add plastic strain to balance the elastic strain, violation of volume conservation!
+                    peeq = Strain(epl+depl+ddepl).eeq()
+                    # calculate tangent stiffness matrix for correction step
+                    a = np.array([[deps_r[0], 0., 0., 0., deps_r[2], deps_r[1]], \
+                        [0., deps_r[1], 0., deps_r[2], 0., deps_r[0]], \
+                        [0., 0., deps_r[2], deps_r[1], deps_r[0], 0.]])
+                    y = np.linalg.lstsq(a, dsig[0:3], rcond=None)
+                    x = y[0]
+                    Ct = np.zeros((6,6))
+                    Ct[0:3,0:3] = np.array([[x[0], x[5], x[4]], \
+                                   [x[5], x[1], x[3]], \
+                                   [x[4], x[3], x[2]]])
+                    t_stiff -= Ct
+                    #update yield function
+                    if self.ML_yf: # and self.msparam is not None:
+                        fy1 = self.ML_full_yf(sig)
+                    else:
+                        fy1 = self.calc_yf(sig, peeq=peeq)
+                grad_stiff += t_stiff*st_scal/nsteps
+                depl += ddepl
+        self.msg['nsteps'] = niter
+        return fy1, sig, depl, grad_stiff
+    
     def calc_yf(self, sig, peeq=0., ana=False, pred=False):
         '''Calculate yield function
 
@@ -329,20 +469,18 @@ class Material(object):
                 ih = 3 if self.whdat else 2
                 for i in range(self.Nset):
                     X_test[:,ih+i] = x_test[:,ih+i]/self.scale_text[i] - 1.
-        'define and fit SVC'
+        #define and fit SVC
         self.svm_yf = svm.SVC(kernel='rbf',C=C,gamma=gamma)
         self.svm_yf.fit(X_train, y_train)
         self.ML_yf = True
-        '''if (ptol>=1.):
-            ptol=0.9
-            print('Warning: ptol must be <1 for ML yield function')'''
-        'calculate scores'
+
+        #calculate scores
         train_sc = 100*self.svm_yf.score(X_train, y_train)
         if x_test is None:
             test_sc = None
         else:
             test_sc  = 100*self.svm_yf.score(X_test, y_test)
-        'create plot if requested'
+        #create plot if requested
         if plot:
             print('Plot of extended training data for SVM classification in 2D cylindrical stress space')
             xx, yy = np.meshgrid(np.linspace(-1.-fs, 1.+fs, 50),np.linspace(-1., 1., 50))
@@ -525,15 +663,15 @@ class Material(object):
         elif sh!=(N,3):
             sys.exit('Error: Unknown format of stress in calc_fgrad')
         if self.ML_grad and not ana:
-            'use SVR fitted to gradient'
+            #use SVR fitted to gradient
             sig = sig/self.sy
             fgrad[:,0] = self.svm_grad0.predict(sig)*self.gscale[0]
             fgrad[:,1] = self.svm_grad1.predict(sig)*self.gscale[1]
             fgrad[:,2] = self.svm_grad2.predict(sig)*self.gscale[2]
             self.msg['gradient'] = 'SVR gradient'
         elif self.ML_yf and not ana:
-            'use numerical gradient of SVC yield fct. in sigma space'
-            'gradient of rbf-Kernel function w.r.t. theta'
+            #use numerical gradient of SVC yield fct. in sigma space
+            #gradient of rbf-Kernel function w.r.t. theta
             def grad_rbf(x,xp):
                 hv = x-xp
                 hh = np.sum(hv*hv,axis=1) # ||x-x'||^2=sum_i(x_i-x'_i)^2
@@ -541,7 +679,7 @@ class Material(object):
                 arg = -2.*self.gam_yf*hv[:,1]
                 grad = k*arg
                 return grad
-            'define Jacobian of coordinate transformation'
+            #define Jacobian of coordinate transformation
             def Jac(sig):
                 global flag
                 J = np.ones((3,3))
@@ -549,7 +687,7 @@ class Material(object):
                 dev = sig - hyd  # deviatoric princ. stress
                 vn = np.linalg.norm(dev)*np.sqrt(1.5)  #norm of stress vector
                 if vn>0.1:
-                    'only calculate Jacobian if sig>0'
+                    # calculate Jacobian only if sig>0
                     dseqds = 3.*dev/vn
                     J[:,2] /= 3.
                     J[:,0] = dseqds
@@ -579,7 +717,7 @@ class Material(object):
                     dKdt_l = np.sum(dc*grad_rbf(x[i,:]-dthet,sv))
                     dKdt_r = np.sum(dc*grad_rbf(x[i,:]+dthet,sv))
                     dKdt = 0.25*(2*dKdt + dKdt_l + dKdt_r)
-                fgrad[i,:] = Jac(sig[i,:])@np.array([1,dKdt,0])
+                fgrad[i,:] = Jac(sig[i,:]) @ np.array([1,dKdt,0])
             self.msg['gradient'] = 'gradient to ML_yf'
         else:
             h0 = self.hill[0]
@@ -1010,6 +1148,7 @@ class Material(object):
             yfun=0. # catch error that can be produced for anisotropic materials'''
         if (yfun<=ptol):
             pdot = np.zeros(6)
+            print('WARNING: Test for small stresses will be depracted in next version')
         else:
             a = np.zeros(6)
             a[0:3] = self.calc_fgrad(Stress(sig).p)
@@ -1130,8 +1269,13 @@ class Material(object):
         f : 1d-array
             Yield function evaluated at sig=x.sp
         '''
+        
         y = np.array([x,x,x]).transpose()
-        f = self.calc_yf(y*sp,peeq=self.wh_cur-self.epc)
+        if self.msparam is None:
+            peeq = 0.
+        else:
+            peeq = self.wh_cur-self.epc
+        f = self.calc_yf(y*sp,peeq=peeq)
         return f
 
     def ellipsis(self, a=1., b=1./np.sqrt(3.), n=72):
@@ -1453,7 +1597,7 @@ class Material(object):
             seq  = self.calc_seq(fe.sgl)   # store time dependent mechanical data of model
             eeq  = eps_eq(fe.egl)
             peeq = eps_eq(fe.epgl)
-            iys = np.nonzero(peeq<1.e-6)
+            iys = np.nonzero(peeq<1.e-2)
             ys = seq[iys[0][-1]]
             self.prop[sel]['ys']   = ys
             self.prop[sel]['seq']  = seq

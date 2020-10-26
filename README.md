@@ -1,4 +1,4 @@
-# pyLabFEA
+# pyLabFEA – development branch
 
 ### Python Laboratory for Finite Element Analysis
 
@@ -13,6 +13,9 @@ elastic-plastic materials, which is fully written in Python. Due to
 its simplicity, it is well-suited for teaching, and its flexibility in
 constitutive modeling of materials makes it a useful research tool.
 
+### Microstructure branch
+This branch of pyLabFEA contains some features for data-based modeling of microstructures and their mechanical properties. **It may contain unstable or experimental code segments. Use at own risk.**
+
 ## Installation
 
 The pyLabFEA package is installed with the following command
@@ -26,6 +29,13 @@ After this, the package can by imported with
 ```python
 import pylabfea as FE
 ```
+
+The correct implementation can be tested with
+
+```
+$ pytest tests
+```
+**Does not yet contain tests for data-based features.**
 
 
 ## Documentation

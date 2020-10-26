@@ -3,11 +3,12 @@
 from virtual or physical mechanical tests in the pyLabFEA package. This class provides the 
 methods necessary for analyzing data. During this processing, all information is gathered 
 that is required to define a material, i.e., all parameters for elasticity, plasticity, 
-and microstructures are provided from the data.
+and microstructures are provided from the data. Materials are defined in 
+module pylabfea.material based on the analyzed data of this module.
 
-uses NumPy, SciPy, MatPlotLib
+uses NumPy, SciPy, MatPlotLib, Pandas
 
-Version: 2.1 (2020-04-05)
+Version: 3.2 (2020-10-26)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, April 2020
 Email: alexander.hartmaier@rub.de
 distributed under GNU General Public License (GPLv3)'''
@@ -19,7 +20,8 @@ import numpy as np
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
-import sys
+import warnings
+from copy import deepcopy
 
 sig_names = ['S11','S22','S33']#,'S23','S13','S12']
 theta_name = ['theta']
@@ -28,9 +30,9 @@ eps_names = ['E11','E22','E33','E23','E13','E12']
 eel_names = ['Ee11','Ee22','Ee33','Ee23','Ee13','Ee12']
 ubc_names = ['StrainX', 'StrainY', 'StrainZ']
             
-'================='
-'define data class'
-'================='
+#=================
+#define data class
+#=================
 class Data(object):
     '''Define class for handling data from virtual mechanical tests in micromechanical 
     simulations and data from physical mechanical tests on materials with various 
@@ -72,7 +74,6 @@ class Data(object):
     flow_stress : cyl. stress
     mat_param : dictionary
         Contains available data for microstructural parameters ("texture", "work_hard", "flow_stress") to be transfered to material.microstructure
-    
     '''
     def __init__(self, msl, path_data, path_json=None, name='Dataset', nth=1, 
                             epl_crit=2.e-3, d_ep=5.e-4, epl_max=0.03, npe=1, plot=False):
@@ -89,10 +90,11 @@ class Data(object):
         self.dep = d_ep
         self.set = []
         self.flow_stress = None
-        'import and pre-process data of all microstructure'
+        self.predef = False
+        #import and pre-process data of all microstructure
         for name in msl:
             self.set.append(self.Set(self, name, plot=plot))
-        'calculate average properties over all microstructures'
+        #calculate average properties over all microstructures
         prop = np.zeros(3)
         micr = []
         name = []
@@ -111,7 +113,7 @@ class Data(object):
                 peeq_min = self.epc
                 Nlc_min = np.minimum(Nlc_min, dset.Nlc)
             if dset.texture_type!=ttyp and dset.texture_type!='Random':
-                print('Warning: Different texture types mixed in data set', name)
+                warnings.warn('Warning: Different texture types mixed in data set '+str(name))
         prop /= self.Nset  # average properties over all microstructures
         peeq_min = np.minimum(peeq_min, epl_max)
         self.sy_av = prop[0] # information needed when material.plasticity is initiated 
@@ -268,45 +270,76 @@ class Data(object):
             
             self.name = name
             self.db = db
+            eps_0 = 0.
+            sig_0 = 0.
+            epl_0 = 0.
             with open(db.pj+name+'.json') as f:
                 self.meta = json.load(f)
 
-            'import data from CSV files of micromechanical simulations'
+            #import data from CSV files of micromechanical simulations
             sep   = self.meta['CSV_separator']
             file  = db.pd + self.meta['CSV_data']
             names = self.meta['CSV_format'].split(sep)
             AllData = pd.read_csv(file,header=1,names=names,sep=sep)
             dtype = self.meta['Class']
-            if db.flow_stress is None:
-                db.flow_stress = (dtype == 'Flow_Stress')
+            if dtype == 'Flow_Stress':
+                if db.flow_stress is None:
+                    db.flow_stress = True
+                elif not db.flow_stress:
+                    raise ValueError('Incompatible data sets: Yield_Stress and Flow-Stress classes cannot be mixed.')
+            elif dtype == 'Yield_Stress':
+                if db.flow_stress is None:
+                    db.flow_stress = False
+                elif db.flow_stress:
+                    raise ValueError('Incompatible data sets: Yield_Stress and Flow-Stress classes cannot be mixed.')
+            elif dtype == 'Predeformed':
+                if db.flow_stress is None:
+                    db.flow_stress = True
+                    db.predef = True
+                elif not db.flow_stress:
+                    raise ValueError('Incompatible data sets: Yield_Stress and Flow-Stress classes cannot be mixed.')
             else:
-                if db.flow_stress and (dtype == 'Yield_Stress'):
-                    sys.exit('Incompatible data sets: Yield_Stress and Flow-Stress classes cannot be mixed.')
+                raise ValueError('Unknown value for Class: '+str(dtype))
             self.sig     = AllData[sig_names].to_numpy()[::db.nth]
+            if db.predef:
+                sig_0 = deepcopy(self.sig[0])
+                #self.sig -= sig_0
             self.sc_full = s_cyl(self.sig)   # transform stresses into cylindrical coordinates
             #self.theta   = AllData[theta_name].to_numpy()[::db.nth]
             if db.flow_stress:
                 'flow stresses are privided for various plastic strains'
                 self.eps = AllData[eps_names].to_numpy()[::db.nth]
+                if db.predef:
+                    eps_0=deepcopy(self.eps[0])
+                    self.eps -= eps_0
                 self.epl = AllData[epl_names].to_numpy()[::db.nth]
+                if db.predef:
+                    epl_0 = deepcopy(self.epl[0])
+                    self.epl -= epl_0
                 #self.eel = AllData[eel_names].to_numpy()[::db.nth]
                 self.ubc = AllData[ubc_names].to_numpy()[::db.nth]
                 'calculate eqiv. stresses and strains and theta values'
                 self.peeq_full = eps_eq(self.epl)  # calculate equiv. plastic strain from data
             self.N = np.shape(self.sig)[0]
-            print('***Shapes',self.eps.shape)
+            #print('***Shapes',self.eps.shape)
             print('\n*** Microstructure:',self.name,'***')
             print(self.N,' data points imported into database ',self.db.name)
             if db.flow_stress:
                 print('Data for flow stresses at various plastic strains imported.')
+            if db.predef:
+                print('\n###Mechanical data obtained after predeformation.')
+                print('Initial stress: ',sig_0, ' equiv. stress: ', seq_J2(sig_0))
+                print('Initial total strain: ',eps_0, 'equiv. total strain', eps_eq(eps_0))
+                print('Initial plastic strain: ',epl_0, 'equiv. plastic strain: ',eps_eq(epl_0))
+                print('Initial values have been subtracted from stress-strain data.')
             
-            'import texture parameters'
+            #import texture parameters
             self.texture_param = self.meta['Texture_index']
             self.texture_name  = self.meta['Texture_name']
             self.texture_type  = self.meta['Texture_type']
             print('Texture ', self.texture_name, 'with texture parameter: ',self.texture_param)
             
-            'Consistency checks'
+            #Consistency checks
             if np.amax(np.abs(self.sc_full[:,2])) > 1.:
                 print('*** Warning: Large hydrostatic stresses: minimum p=%5.2f MPa, maximum p=%5.2f MPa' 
                       %(np.amin(self.sc_full[:,2]),np.amax(self.sc_full[:,2])))
@@ -316,7 +349,7 @@ class Data(object):
                 print(self.theta[0:self.N:2500], self.sc_full[0:self.N:2500,1], hh[0:self.N:2500])'''
                 
             if not db.flow_stress:
-                'data provided only for stress tensor at yield point'
+                #data provided only for stress tensor at yield point
                 self.syc  = s_cyl(self.sig)   # critical cylindrical stress tensor at yield onset
                 self.sy   = np.average(self.syc[:,0]) # average value for yield strength of data set
                 self.Nlc  = self.N
@@ -335,9 +368,9 @@ class Data(object):
                     self.nu = None
                 
             else:
-                'data is provided for flow stress at various plastic strains'
+                #data is provided for flow stress at various plastic strains
 
-                'filter load cases'
+                #filter load cases
                 self.load_case = []   # list of lists with data set indices belonging to one load case
                 hh = []
                 uvec = self.ubc[0,:]
@@ -349,70 +382,79 @@ class Data(object):
                         hh = []
                         uvec = self.ubc[i,:]
             
-                'select data points close to yield point => yield strength sy and raw data for ML flow rule'
+                #select data points close to yield point => yield strength sy and raw data for ML flow rule
                 ind = np.nonzero(np.logical_and(self.peeq_full>db.epc-db.dep, self.peeq_full<db.epc+db.dep))[0]
+                if len(ind)<10:
+                    warnings.warn('***Warning: too few data points around yield criterion:'+str(len(ind))+', '+str(ind)+', '+str(db.epc)+', '+str(db.dep))
                 scyl_raw = self.sc_full[ind]
                 peeq_raw = self.peeq_full[ind]
                 self.Ndat = len(ind)
                 self.sy = np.average(scyl_raw[:,0])  # get first estimate of yield point, will be refined later
             
-                'mirror stress data w.r.t. theta in deviatoric stress space'
+                #mirror stress data w.r.t. theta in deviatoric stress space
                 sc2 = np.zeros((self.Ndat,2))
                 sc2[:,0] = scyl_raw[:,0]
                 sc2[:,1] = scyl_raw[:,1]-np.pi
                 ih = np.nonzero(sc2[:,1]<-np.pi)[0]
                 sc2[ih,1] += 2*np.pi
             
-                'calculate associated load vector for boundary conditions'
+                #calculate associated load vector for boundary conditions
                 hs1 = self.sig[ind,:]     # original stresses
                 hs2 = sp_cart(sc2)        # mirrored stresses
                 sign = np.sign(hs1*hs2)   # filter stress components where sign has changed by mirroring
                 ubc2 = self.ubc[ind]*sign # change sign accordingly in BC vector
 
-                'add mirrored data to flow stresses and augment plastic strain arrays accordingly'
+                #add mirrored data to flow stresses and augment plastic strain arrays accordingly
                 self.sfc_  = np.append(scyl_raw[:,0:2], sc2, axis=0) 
                 self.peeq_ = np.append(peeq_raw, peeq_raw, axis=0)
                 self.ubc_  = np.append(self.ubc[ind], ubc2, axis=0)
                 self.sig_  = sp_cart(self.sfc_) # transform back into 3D principle stress space
                 self.Ndat *= 2    # number of load cases in raw data
             
-                'calculate yield function of raw data'
+                #calculate yield function of raw data
                 self.f_yld_ = np.sign(self.peeq_ - db.epc)
                 self.i_el_  = np.nonzero(self.f_yld_<0.)[0]
                 self.i_pl_  = np.nonzero(self.f_yld_>=0.)[0]
             
-                'filter load cases of raw data'
+                #filter load cases of raw data
                 self.lc_ = []   # list of lists with data set indices belonging to one load case
                 hh = []
                 uvec = self.ubc_[0,:]
+                #print('First load case: ', uvec)
                 for i in range(self.Ndat):
                     if np.linalg.norm(self.ubc_[i,:]-uvec) < 1.e-5:
                         hh.append(i)
                     else:
-                        self.lc_.append(hh)
+                        if len(hh) > 2:
+                            self.lc_.append(hh)
+                            uvec = self.ubc_[i,:]
+                            #print('Load case selection', i, uvec, self.lc_[-1][0],self.lc_[-1][-1])
                         hh = []
-                        uvec = self.ubc_[i,:]
                 self.Nlc = len(self.lc_)
-                print('Number of load cases: ',self.Nlc, '; initially: ',self.Ndat)
+                print('Number of load cases: ',self.Nlc, '; with ',self.Ndat, ' data points around yield point')
 
-                'for each load case: interpolate flow stress to fixed PEEQ'
+                #for each load case: interpolate flow stress to fixed PEEQ
                 hs = []
                 ht = []
                 for i in range(self.Nlc):
                     ind = self.lc_[i]
                     iel = np.nonzero(self.f_yld_[ind]<0.)[0]  # find elastic data sets in load case
                     ipl = np.nonzero(self.f_yld_[ind]>=0.)[0] # find plastic data sets in load case
-                    ds = self.sfc_[ind[ipl[0]],0] - self.sfc_[ind[iel[-1]],0]   # difference in seq b/w first plastic and last elastic data point
-                    de = self.peeq_[ind[ipl[0]]]  - self.peeq_[ind[iel[-1]]]    # difference in peeq b/w first plastic and last elastic data point
-                    hs.append(self.sfc_[ind[iel[-1]],0] + (db.epc-self.peeq_[ind[iel[-1]]])*ds/de) # linearly interpolated equiv. stress at yield onset
-                    ht.append(self.sfc_[ind[iel[-1]],1]) # polar angle of load case
+                    if len(iel)==0 or len(ipl)==0:
+                        print('**Load case', i, 'not enough data points around yield point. iel=',iel,'ipl=',ipl)
+                        self.Nlc -= 1
+                    else:
+                        ds = self.sfc_[ind[ipl[0]],0] - self.sfc_[ind[iel[-1]],0]   # difference in seq b/w first plastic and last elastic data point
+                        de = self.peeq_[ind[ipl[0]]]  - self.peeq_[ind[iel[-1]]]    # difference in peeq b/w first plastic and last elastic data point
+                        hs.append(self.sfc_[ind[iel[-1]],0] + (db.epc-self.peeq_[ind[iel[-1]]])*ds/de) # linearly interpolated equiv. stress at yield onset
+                        ht.append(self.sfc_[ind[iel[-1]],1]) # polar angle of load case
                 ind = np.argsort(ht)   # sort w.r.t. polar angle
                 self.syc = np.zeros((self.Nlc,3))   # critical cylindrical stress tensor at yield onset
                 self.syc[:,0] = np.array(hs)[ind]   # first component: seq
                 self.syc[:,1] = np.array(ht)[ind]   # second component: polar angle
                 self.sy = np.average(self.syc[:,0]) # refined value for yield strength of data set
             
-                'select data points with eqiv. stress in range [0.1,0.4]sy => elastic constants'
+                #select data points with eqiv. stress in range [0.1,0.4]sy => elastic constants
                 seq = seq_J2(self.sig)
                 ind1 = np.nonzero(np.logical_and(seq>0.1*self.sy, seq<0.4*self.sy))[0]
                 seq = seq_J2(self.sig[ind1])
@@ -500,6 +542,19 @@ class Data(object):
     
     def plot_yield_locus(self, active, set_ind=0, file=None, fontsize=18, scatter=False):
         '''Plot yield loci of imported microstructures in database.
+        
+        Parameters
+        ----------
+        active  : string
+            'workd_hard' or 'texture', selct which parameter to vary for set of plots
+        set_ind : int
+            select data set for work hardening plots (corresponds to level of plastic strain) (optional, default: 0)
+        file    : string
+            filename for output (optional, default: None (no output))
+        fontsize : int
+            specifies fontsize used in plot (optional, default: 18)
+        scatter : Boolean
+            defines if raw data points are plotted (optional, default: False)
         '''
         fig = plt.figure(figsize=(15, 8))
         cmap = plt.cm.get_cmap('viridis', 10)
@@ -526,8 +581,8 @@ class Data(object):
                 plt.polar(sc[:,1], sc[:,0], '.r', label=label)
             plt.polar(sc[:,1], sc[:,0], label=label, color=color)
             plt.legend(loc=(1.04,0.7),fontsize=fontsize-2)
-        if file is not None:
-            plt.savefig(file+'.pdf', format='pdf', dpi=300)
         plt.tick_params(axis="x", labelsize=fontsize-4)
         plt.tick_params(axis="y", labelsize=fontsize-4)
+        if file is not None:
+            plt.savefig(file+'.pdf', format='pdf', dpi=300)
         plt.show()
