@@ -122,6 +122,7 @@ class Model(object):
         self.epgl = np.zeros((1,6)) # list for time evolution of global plastic strain
         self.u = None
         self.f = None
+        self.Nnode = None
         #SRM : named module glob exists
         self.glob = {
             'ebc1'   : None,  # global x-strain from BC
@@ -559,7 +560,7 @@ class Model(object):
             NY = 1
             warnings.warn('Warning: NY=1 for 1-d model')
         if self.u is not None:
-            #print('Warning: solution of previous solution steps is deleted')
+            warnings.warn('Warning: Solution of previous steps is deleted')
             self.u = None
             self.f = None
         self.NnodeX = self.shapefact*NX + 1    # number of nodes along x axis
@@ -690,7 +691,7 @@ class Model(object):
         Model.u     : (Model.Ndof,) array
             Nodal displacements
         Model.f     : (Model.Ndof,) array
-            Nodel forces
+            Nodal forces
         Model.sgl   : (N,6) array
             Global stress as as Voigt tensor for each incremental load step (homogenized element solution)
         Model.egl   : (N,6) array
@@ -704,6 +705,10 @@ class Model(object):
         Element.epl : (6,) array
             Element solution for plastic strain tensor
         '''
+        #test if meshing has been performed
+        if self.Nnode is None:
+            raise AttributeError('Attributes for mesh not set, but required by solver.')
+        
         #calculate reduced stiffness matrix according to BC
         def Kred(K, ind):
             Kred = np.zeros((len(ind), len(ind)))
