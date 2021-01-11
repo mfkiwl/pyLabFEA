@@ -1,0 +1,40 @@
+{
+  "Owner"       : "Alexander Hartmaier",   
+  "Institution" : "Ruhr University Bochum, ICAMS", 
+  "Date"        : "2021.01.10", 
+  "Class"       : "Anisotropic plasticity", 
+  "Method"      : "CPFEM", 
+  "Model"       : {
+    "Creator" : "Abaqus",
+    "Version": 6.14,
+    "ABQ_input": "inputfile_model.inp,Material.inp,remPart.inp",
+    "Boundary_conditions": "BCs.dat",
+    "CP_version": 1.0,
+    "Repository": "https://github.com/ICAMS/Crystal_Plasticity_UMAT", 
+    "CP_path": "umat_files/umat.f"
+  },
+  "Microstructure" : {
+    "Creator" : "Kanapy",
+    "Version" : 2.0,
+    "Repository" : "https://github.com/mrgprasad/kanapy.git",
+    "Grains" : {
+        "Module" : "brick_work",
+        "Number" : 128,
+        "Equivalent_diameter_micron" : 10,
+        "Aspect_Ratio" : 4.0
+    },
+    "Texture"     : {
+        "Module"  : "Synthetic_EBSD",
+        "Components_Fraction" : "Brass=0.0,Copper=0.0,Cube=0.0,Goss=1.0,S=0.0,random=0.0",
+        "Kernel_function" : "de la Vallee Poussin",
+        "Kernel_half-width_degree" : 15,
+        "Orientation_set": "texture6/ori.csv"
+    }
+   },
+  "Data" : {
+    "Type"   : "CSV",
+    "File"   : "texture6/Outfiles.csv",
+    "Format" : "S11;S22;S33;S12;S13;S23;Ee11;Ee22;Ee33;Ee12;Ee13;Ee23;Ep11;Ep22;Ep33;Ep12;Ep13;Ep23;E11;E22;E33;E12;E13;E23;StrainX;StrainY;StrainZ;theta",
+    "Separator" : ";"
+  }
+}

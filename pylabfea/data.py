@@ -8,14 +8,14 @@ module pylabfea.material based on the analyzed data of this module.
 
 uses NumPy, SciPy, MatPlotLib, Pandas
 
-Version: 3.2 (2020-10-26)
+Version: 3.3 (2021-01-09)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, April 2020
 Email: alexander.hartmaier@rub.de
 distributed under GNU General Public License (GPLv3)'''
 
 from pylabfea.basic import *
-from pylabfea.model import Model
-from pylabfea.material import Material
+#from pylabfea.model import Model
+#from pylabfea.material import Material
 import numpy as np
 import json
 import pandas as pd
@@ -83,10 +83,10 @@ class Data(object):
     '''
     def __init__(self, msl, path_data, path_json=None, name='Dataset', nth=1, sdim=3, mirror=False,
                             epl_crit=2.e-3, d_ep=5.e-4, epl_max=0.03, npe=1, plot=False):
-        self.msl  = msl
-        self.Nset = len(msl)
         self.name = name
         self.pd = path_data
+        if sdim!=3 and sdim!=6:
+            raise ValueError('Value of sdim must be either 3 or 6')
         self.sdim = sdim
         self.mirror = mirror
         if path_json is not None:
@@ -100,23 +100,30 @@ class Data(object):
         self.flow_stress = None
         self.predef = False
         #import and pre-process data of all microstructure
-        for name in msl:
-            self.set.append(self.Set(self, name, plot=plot))
+        if path_data is not None:
+            # data is read from given path
+            self.Nset = len(msl)
+            for name in msl:
+                self.set.append(self.Set(self, name, plot=plot))
+        else:
+            #data is read from given data
+            self.Nset = 1
+            self.set.append(self.Set_Data(self, msl, name))
         #calculate average properties over all microstructures
         prop = np.zeros(3)
         micr = []
         name = []
-        sfl  = []
         peeq_min = 10.  # minimum final equiv. plastic strain reached in sets
         Nlc_min = 1000  # minimum number of load cases reached in sets
         ttyp = self.set[-1].texture_type
+        i = 2 if mirror else 1
         for dset in self.set:
             prop += np.array([dset.sy, dset.E, dset.nu])
             micr.append(dset.texture_param)
             name.append(dset.texture_name)
             if self.flow_stress:
                 peeq_min = np.minimum(peeq_min, dset.peeq_full[-10])
-                Nlc_min = np.minimum(Nlc_min, 2*len(dset.load_case))
+                Nlc_min = np.minimum(Nlc_min, i*len(dset.load_case))
             else:
                 peeq_min = self.epc
                 Nlc_min = np.minimum(Nlc_min, dset.Nlc)
@@ -133,6 +140,7 @@ class Data(object):
         print('Averaged properties : E_av=%5.2f GPa, nu_av=%4.2f, sy_av=%4.2f MPa' % (self.E_av/1000, self.nu_av, self.sy_av))
         self.mat_param = {      # this information of the data will be copied into the material upon definition of its microstructure
             'ms_type'     : ttyp,      # unimodal texture type
+            'sdim'        : sdim,      # dimnesionaltiy of stress values in data (3: only princ. stresses, 6: full stresses)
             'Npl'         : npe,       # number of PEEQ values 
             'Nlc'         : Nlc_min,   # number of load cases covered in data (minimum of load cases reached over all sets)
             'Ntext'       : self.Nset, # number of microstructures covered by sets
@@ -140,29 +148,33 @@ class Data(object):
             'tx_name'     : name,      # list of names of different textures
             'peeq_max'    : peeq_min,  # maximum PEEQ covered in data (must be minimum of value reached over all sets)
             'epc'         : epl_crit,  # critical PEEQ for with yield stress is defined 
-            'work_hard'   : np.linspace(epl_crit,peeq_min,npe) # values of PEEQ for which flow stresses are available
+            'work_hard'   : np.linspace(epl_crit,peeq_min,npe), # values of PEEQ for which flow stresses are available
+            'E_av'        : self.E_av, # Young's modulus
+            'nu_av'       : self.nu_av,# Poisson ratio
+            'sy_av'       : self.sy_av # yield strength
         }
         print(self.mat_param)
         #for each load case in each set: interpolate flow stress to fixed PEEQ grid
         Nlc = self.mat_param['Nlc']
-        sf = np.zeros((self.Nset,npe,Nlc,3))  
+        sf = np.zeros((self.Nset,npe,Nlc,3))
+        syld = np.zeros((self.Nset,Nlc,6))
         sflow_av = np.zeros((self.Nset,npe))
-        iset = 0
-        for dset in self.set:   # loop over data sets
-            ipeeq=0
+        for iset, dset in enumerate(self.set):   # loop over data sets
+            syld[iset,:,:] = dset.syld[0:Nlc,:]
             if not self.flow_stress:
                 #data for stress tensor at yield onset provided in data
-                sf[iset,ipeeq,:,:] = dset.syc
-                sflow_av[iset,ipeeq] = np.average(dset.syc[:,0])    # average seq over polar angles
+                sf[iset,0,:,:] = dset.syc
+                sflow_av[iset,0] = np.average(dset.syc[:,0])    # average seq over polar angles
             else:
-                N0 = int(Nlc/2)
+                i = 2 if mirror else 1
+                N0 = int(Nlc/i)
                 N1 = len(dset.load_case)
                 x0 = np.linspace(0,1,N0)
                 x1 = np.linspace(0,1,N1)
                 y1 = np.linspace(0,N1-1,N1)
                 ilc = np.interp(x0,x1,y1).astype(int)
             
-                for peeq in self.mat_param['work_hard']:  # loop over PEEQS for which flow stresses are required
+                for ipeeq, peeq in enumerate(self.mat_param['work_hard']):  # loop over PEEQS for which flow stresses are required
                     hs = []
                     ht = []
                     for i in range(N0):  # loop over load cases for each level of PEEQ
@@ -179,21 +191,21 @@ class Data(object):
                         de = epl  - eel  # difference in peeq for closest data points
                         sint = s0 + (peeq-eel)*ds/de # linearly interpolated equiv. flow stress at peeq
                         theta = dset.sc_full[ind[iel[-1]],1] # polar angle (not interpolated)
-                        hs.append(sint)
-                        hs.append(sint)  # append twice to consider tension compression symmetry in material
-                        ht.append(theta) # append original polar angles
-                        theta -= np.pi   # mirror polar angle
-                        if theta<-np.pi:
-                            theta += 2*np.pi
-                        ht.append(theta) # append mirrored polar angles
+                        hs.append(sint)  # append interpolated equiv. flow stress
+                        ht.append(theta) # append original polar angle of load case
+                        if mirror:
+                            hs.append(sint) # append twice to consider tension compression symmetry in material
+                            theta -= np.pi  # mirror polar angle
+                            if theta<-np.pi:
+                                theta += 2*np.pi
+                            ht.append(theta) # append mirrored polar angles
                     ind = np.argsort(ht) # sort w.r.t. polar angle
                     sf[iset,ipeeq,:,0] = np.array(hs)[ind]   # first component: seq
                     sf[iset,ipeeq,:,1] = np.array(ht)[ind]   # second component: polar angle
                     sflow_av[iset,ipeeq] = np.average(hs)    # average seq over polar angles
-                    ipeeq += 1
-            iset += 1
         self.mat_param['flow_stress'] = sf       # cylindrical flow stresses at PEEQs in 'work_hard' for each texture
         self.mat_param['flow_seq_av'] = sflow_av # averaged equiv. flow stresses at PEEQs in 'work_hard' for each texture
+        self.mat_param['sig_yld'] = syld
  
     class Set(object):
         '''Define class for handling of a dataset for one individual material 
@@ -324,7 +336,8 @@ class Data(object):
                 for i, hsv in enumerate(self.sig):
                     hso = Stress(hsv)  # define object of stress tensor
                     self.sc_full[i,:] = hso.cyl() # transform princ. stress into cylindrical stress
-                    self.evec[i,:,:]  = hso.evec # store eigenvectors in form of rotation matrix from reference frame to princ. stress frame
+                    # store eigenvectors in form of rotation matrix from reference frame to princ. stress frame
+                    self.evec[i,:,:]  = hso.evec 
             #self.theta   = AllData[theta_name].to_numpy()[::db.nth]
             if db.flow_stress:
                 #flow stresses are privided for various plastic strains
@@ -373,6 +386,8 @@ class Data(object):
             if not db.flow_stress:
                 #data provided only for stress tensor at yield point
                 self.syc  = s_cyl(self.sig)   # critical cylindrical stress tensor at yield onset
+                self.syld = np.zeros((self.N,6))
+                self.syld[:,0:db.sdim] = self.sig
                 self.sy   = np.average(self.syc[:,0]) # average value for yield strength of data set
                 self.Nlc  = self.N
                 self.Ndat = self.N
@@ -495,7 +510,8 @@ class Data(object):
                 self.syc = np.zeros((self.Nlc,3))   # critical cylindrical stress tensor at yield onset
                 self.syc[:,0] = np.array(hs)[ind]   # first component: seq
                 self.syc[:,1] = np.array(ht)[ind]   # second component: polar angle
-                self.syld = np.array(hv)[ind]       # full Voigt stress at yield onset
+                self.syld = np.zeros((len(ind),6))
+                self.syld[:,0:db.sdim] = np.array(hv)[ind]       # full Voigt stress at yield onset
                 self.sy = np.average(self.syc[:,0]) # refined value for yield strength of data set
             
                 #select data points with eqiv. stress in range [0.1,0.4]sy => elastic constants
@@ -638,3 +654,21 @@ class Data(object):
         if file is not None:
             plt.savefig(file+'.pdf', format='pdf', dpi=300)
         plt.show()
+    
+    class Set_Data(object):
+        def __init__(self, db, sig, name):
+            #data provided only for stress tensor at yield point
+            if db.mirror:
+                sig = np.append(sig, -sig, axis=0)
+            self.N = len(sig)
+            self.syc  = s_cyl(sig)   # critical cylindrical stress tensor at yield onset
+            self.syld = sig
+            self.sy   = np.average(self.syc[:,0]) # average value for yield strength of data set
+            self.Nlc  = self.N
+            self.Ndat = self.N
+            self.texture_type = 'Goss-100%'
+            self.texture_param = 1.
+            self.texture_name ='Goss'
+            self.E = 151220.
+            self.nu = 0.3
+        

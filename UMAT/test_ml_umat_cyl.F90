@@ -52,9 +52,9 @@ write(30,*)'strain (6-array) stress (6-array)'
 stress = 0.d0
 stran = 0.d0
 dstran = 0.d0
-dstran(2) = 0.00015d0
-dstran(1) = -0.3*dstran(2)
-dstran(3) = -0.3*dstran(2)
+dstran(1) = 0.0003d0
+dstran(2) = -0.3*dstran(1)
+dstran(3) = -0.3*dstran(1)
 
 do kinc=1,5
    call umat(stress, statev, ddsdde, sse, spd, scd, rpl, ddsddt,drplde,     &
@@ -142,26 +142,28 @@ end
     real(8) :: predef(1)                                                        !Predefined field variables at the beggining of the increment
     real(8) :: dpred (1)                                                        !Increment of predefined field variables
  
-    character(200) :: filePath, supportVectorsPath, dualCoeffsPath, scaleParamPath, fileName    !cwd path and files containing the support vectors and dual coeffs
+    character(200) :: filePath, supportVectorsPath, dualCoeffsPath, fileName    !cwd path and files containing the support vectors and dual coeffs
     real(8) :: ymod, nu, ebulk3, eg2, eg, eg3, elam                             !Lamé parameters and derived coefficients                                           
-    integer :: nsv                                      !Number of support vectors and dual coefficients (To do: pass via props)    
-    integer, parameter :: nsd = 5                                               ! Number of dof in deviatoric stress space
-    integer :: Nset 
-    real(8), dimension(:, :), allocatable :: supportVectors, temp_sv            !Array of support vectors
-    real(8), dimension(:), allocatable :: dual_coeffs                           !Array of dual coefficients
-    real(8), dimension(ntens) :: sigma                                          !Stress tensor
+    integer, parameter :: nsv = 125 !1689                                       !Number of support vectors and dual coefficients (To do: pass via props)    
+    integer, parameter :: nsc = 3                                               ! Number of components in cylindrical stress tensor
+    real(8), dimension(nsv, 2) :: supportVectors                                !Array of support vectors
+    real(8), dimension(nsv) :: dual_coeffs                                      !Array of dual coefficients
+    real(8), dimension(nsc) :: sigmaCyl, sc0, sc1                               !Stress vector in the cylindrical coordinate system
     real(8), dimension(ntens) :: stress_fl                                      ! flow stress on yield locus
+    real(8), dimension(3) :: a_vec, b_vec                                       !vectors a_vec and b_vec are the spanning vectors of the deviatoric plane 
     real(8) :: rho                                                              !Intercept of the decision rule function
     real(8) :: lambda                                                           !Regularization parameter
-    real(8) :: scale_seq, scale_wh                                              ! scaling factors for stress, work hardening rate
+    real(8) :: scale_seq                                                        ! scaling factor for stress
     real(8) :: fsvc                                                             !Decision function
-    real(8) :: sq0, sq1, sq2                                                    ! equiv. stresses
-    real(8), dimension(ntens) :: dfds                                            !Derivative of the decision function w.r.t. princ. stress
-    real(8), dimension(ntens) :: flow                                             !Flow vector
+    real(8), dimension(3) :: dfds                                            !Derivative of the decision function w.r.t. princ. stress
+    real(8), dimension(3,3) :: jac                                              !Jacobian of the coordinate transformation
+    real(8), dimension(3) :: flow                                             !Flow vector
  
-    real(8), parameter :: tol = 1.e-2                                         !Rel. tolerance for for yield function
+    real(8), parameter :: tol = 1.0e-03                                         !Tolerance for the fsvc root finder
+    integer, parameter :: nmax = 100                                            !Maximum number of iterations for the fsvc root finder
  
     integer :: i, j, fileUnit, niter                                                   !Auxiliar indices
+    real(8), dimension(2, nsv) :: temp_sv                                       !Auxiliary array
     real(8), dimension(ntens, ntens) :: Ct                                 !Consistent tanget stiffness matrix
     real(8), dimension(ntens) :: deps                                           !strain increment outside yield locus, if load step is splitted
  
@@ -170,42 +172,34 @@ end
     pi = 4.d0*datan(1.d0)
     !The working directory path is defined, along with the basename of the files
     !containing the support vectors and dual coefficients
-    filePath ='./data/ML-Goss-Barlat_ml_param'
+    filePath ='./data/'
     fileName = 'umat-output.dat'
     
-    supportVectorsPath = trim(adjustl(filePath))//'_sv.csv'
-    dualCoeffsPath = trim(adjustl(filePath))//'_dc.csv'
-    scaleParamPath = trim(adjustl(filePath))//'_sp.csv'
-    
-    open(newunit=fileUnit, file=scaleParamPath, status='old')
-    read(fileUnit, *) h1
-    nsv = int(h1)
-    read(fileUnit, *) rho
-    read(fileUnit, *) lambda
-    read(fileUnit, *) scale_seq
-    read(fileUnit, *) scale_wh
-    read(fileUnit, *) h1
-    Nset = int(h1)
-    close(fileUnit)
-    
-    allocate( temp_sv(nsd, nsv) )
-    allocate( supportVectors(nsv, nsd) )
-    allocate( dual_coeffs(nsv) )
+    supportVectorsPath = trim(adjustl(filePath))//'supportVectors.out'
+ 
+    !dualCoeffsPath = trim(adjustl(filePath))//'dualCoeffsTresca.out'
+    dualCoeffsPath = trim(adjustl(filePath))//'dualCoeffs.out'
  
     open(newunit=fileUnit, file=supportVectorsPath, status='old')
     read(fileUnit, *) temp_sv
     close(fileUnit)
     supportVectors = transpose(temp_sv)
-    
-    deallocate( temp_sv )
  
     open(newunit=fileUnit, file=dualCoeffsPath, status='old')
     read(fileUnit, *) dual_coeffs
     close(fileUnit)
  
-    !print *,'Parameters: ', nsv, rho, lambda, scale_seq, scale_wh, Nset
-
-    threshold = tol*scale_seq   ! threshold value for yield function still accepted as elastic
+    !Read from the python script (Hill)
+    rho = 0.54039174d0
+ 
+    ! gamma parameter (Tresca)
+    !lambda = 0.0004
+ 
+    ! gamma parameter (Hill)
+    lambda = 4.0d0
+    
+    scale_seq = 150.d0
+    threshold = 0.5d0   ! threshold value for yield function still accepted as elastic
  
     !Definition of the Lamé parameters used to fill out the stiffness matrix
     ymod = props(1)
@@ -218,9 +212,18 @@ end
     
     !get accumulated plastic strain
     eplas = statev(1:6)
-    flow = 0.
-    print *, '+++Plast. strain:',eplas
     
+    ! a_vec and b_vec are the spanning vectors of the deviatoric plane
+    h1 = 1./sqrt(6.d0)
+    h2 = 1./sqrt(2.d0)
+    a_vec(1) = 2.d0*h1
+    a_vec(2) = -h1
+    a_vec(3) = -h1
+    b_vec(1) = 0.d0
+    b_vec(2) = h2
+    b_vec(3) = -h2
+
+ 
     !Elastic stiffness matrix is defined
     !isotropic elasticity, plane strain conditions
     ddsdde = 0.d0
@@ -245,33 +248,48 @@ end
         end do
     end do
     
-     ! calculate yield function by evaluating support vector classification
-     sigma = stress+dsig
-     call calcFSVC(sigma, fsvc)
+     ! calculate yield function and cylindrical stress (equiv. stress, polar angle, hydrostatic stress)
+     call calcFSVC(stress+dsig, sigmaCyl, 0, fsvc)
+  
      niter = 0
      do while ((fsvc.ge.threshold).and.(niter<5))
          ! stress lies outside yield locus
          ! 1. calculate proper flow stress on yield locus
-         call findRoot(sigma, stress_fl)
-         if (niter.eq.0) then
-            ! in first iteration: test is part of load step is elastic
-            call calcFSVC(stress, h1) ! yield function at start of increment
-            if (h1.lt.-tol) then
-                !load step started in elastic regime and has to be splited
-                !for load reversals, negative values must be treated separately
-                !perform elastic substep
-                call calcEqStress(stress, sq0) ! equiv. stress at start of load step
-                call calcEqStress(sigma, sq2)  ! equiv stress at end of load step
-                call calcEqStress(stress_fl, sq1) ! eqiv. stress on yield locus
-                sc_elstep = (sq1-sq0)/(sq2-sq0) ! split load step in elastic regime
-                deps = dstran*sc_elstep ! elastic strain increment   
-                stran = stran + deps    ! add to accomplished strain
-                deps = dstran - deps    ! deduct from remaining strain
-                stress = stress_fl      ! stress at start of remaining load increment (on yield locus)
-            end if !h1<-tol
-         end if ! niter==0
+         sc1 = sigmaCyl
+         call findRoot(sigmaCyl, stress_fl, fsvc)
+         call calcFSVC(stress, sc0, 0, h1)    ! cylindrical stress at start of increment
+         if (h1.lt.-tol) then
+            !load step started in elastic regime and has to be splited
+            !for load reversals, negative values must be treated separately
+            !perform elastic substep
+            sc_elstep = (sigmaCyl(1)-sc0(1))/(sc1(1)-sc0(1))
+            deps = dstran*sc_elstep
+            dsig = 0.d0
+            do i=1, ntens
+                do j=1, ntens
+                    dsig(i)=dsig(i)+ddsdde(i,j)*deps(j)
+                end do
+            end do
+            call calcFSVC(stress+dsig, sigmaCyl, 0, fsvc)
+            if (fsvc.ge.threshold) then
+                print*,'***Warning: Splitting of load step failed', fsvc, sc0, sigmaCyl
+                print*,'DSTRAN, deps', dstran, deps
+                print*,'stress, dsig', stress, dsig
+            else
+                ! update internal varialbles and  perform plastic part of load increment
+                stran = stran + deps
+                stress = stress + dsig
+                deps = dstran - deps
+                dsig = 0.d0
+                do i=1, ntens
+                    do j=1, ntens
+                        dsig(i)=dsig(i)+ddsdde(i,j)*deps(j)
+                    end do
+                end do
+            end if
+         end if
          ! 2. calculate gradient on yield locus for given cyl. stress tensor
-         call calcGradFSVC(stress_fl, dfds)
+         call calcDfsvcds(sigmaCyl, stress_fl, dfds)
          ! 3. calculate plastic strain increment 'flow'
          call calcFlow(dfds, deps, Ct, eplas, flow)
          ! 4. calculate consistent tangent stiffness tensor
@@ -285,9 +303,7 @@ end
          end do
          ! update stress for next iteration and
          ! calculate yield function
-         sigma = stress + dsig
-         call calcFSVC(sigma, fsvc)
-         niter = niter + 1 
+         call calcFSVC(stress+dsig, sigmaCyl, 0, fsvc)
      end do
      if (niter.ge.5) then
         print*,'***Warning: plasticity algorithm did not converge after',niter,'iterations'
@@ -311,29 +327,31 @@ end
         open(newunit=fileUnit,file=trim(adjustl(fileName)),    &
         &    status='old', position='append', action='write')
     end if
-    call calcEqStress(stress, sq1)
+    call calcCylStress(stress, sigmaCyl)
     call calcEqStrain(stran, eeq)
     call calcEqStrain(eplas, peeq)
-    write(fileUnit,'(12f14.7)') stran(1:3), stress(1:3), eplas(1:3), sq1, eeq, peeq
+    write(fileUnit,'(12f14.7)') stran(1:3), stress(1:3), eplas(1:3), sigmaCyl(1), eeq, peeq
     flush(fileUnit)
     close(fileUnit)
-    
-    deallocate (supportVectors, dual_coeffs)
  
  
     contains
  
-    subroutine calcHydStress(stress, sigmaHyd)
+ 
+    subroutine calcHydStress(stress, ntens, sigmaHyd)
     !This subroutine caculates the hydrostatic stress of the Cauchy stress
  
         implicit none
+        integer :: ntens
         real(8), dimension(ntens) :: stress
         real(8) :: sigmaHyd
  
         sigmaHyd = (stress(1)+stress(2)+stress(3))/3.
+       
     end subroutine calcHydStress
  
-    subroutine calcDevStress(stress, sigmaDev)
+ 
+    subroutine calcDevStress(stress, sigmaDev, sigmaHyd)
     !This subroutine calculate the deviatoric stress of the Cauchy stress
  
         implicit none
@@ -341,7 +359,7 @@ end
         real(8) :: sigmaHyd
         integer :: i
  
-        call calcHydStress(stress, sigmaHyd)
+        call calcHydStress(stress, ntens, sigmaHyd)
         do i=1, ndi
             sigmaDev(i) = stress(i) - sigmaHyd
         end do
@@ -349,17 +367,93 @@ end
             sigmaDev(i) = stress(i)
         end do
     end subroutine calcDevStress
-    
-    subroutine calcEqStress(sig, seq)
-        !calculate equivalent J2 stress
+ 
+ 
+    subroutine calcThetaDev(stress, thetaDev)
+    !This subroutine calculates the generalized Lode angle on the deviatoric
+    !plane (Eq. 13)
+ 
+        implicit none
+        integer :: i
+        real(8), dimension(ntens) :: stress
+        real(8), dimension(3) :: princSigma, princDev
+        real(8) :: sigmaHyd, thetaDev
+ 
+        !The principal stresses are computed and stored in the vector princSigma
+        call sprinc(stress, princSigma, 1, ndi, nshr)
+ 
+        !The hydrostatic stress is fetched
+        call calcHydStress(stress, ntens, sigmaHyd)
+ 
+        !The deviatoric principal stresses are calculated and stored at the 
+        !vector princDev
+        do i=1,ndi
+            princDev(i) = princSigma(i) - sigmaHyd
+        end do
+ 
+        thetaDev = atan2( dot_product(princDev, b_vec),                        &
+        &                 dot_product(princDev, a_vec))
+ 
+    end subroutine calcThetaDev
+ 
+    !*******************************************
+    subroutine sprinc(sig, princ, n, ndi, nshr)
+        !*******************************************
+        ! This is only a dummy for the Abaqus in-built function
+        ! must be removed when used as UMAT !!!!
+        !********************************************
+        implicit none
+        integer, parameter :: ntens = 6
+        integer :: n, ndi, nshr
         real(8), dimension(ntens) :: sig
-        real(8) :: seq
-        real(8), dimension(ntens) :: sd
+        real(8), dimension(3) :: princ
         
-        call calcDevStress(sig, sd)
-        seq = sqrt(0.5*((sd(1)-sd(2))**2 + (sd(2)-sd(3))**2 + (sd(3)-sd(1))**2 + &
-              6.*(sd(4)**2 + sd(5)**2 + sd(6)**2)))
-    end subroutine calcEqStress
+        princ(1) = sig(1)
+        princ(2) = sig(2)
+        princ(3) = sig(3)
+        
+    end subroutine sprinc
+ 
+    subroutine calcCylStress(stress,sigmaCyl)
+    !This subroutine calculates the stress vector in the cylindrical COS
+        implicit none
+        real(8), dimension(ntens) :: stress, sigmaDev
+        real(8), dimension(3) :: princDev
+        real(8) :: thetaDev, sigmaHyd
+        real(8), dimension(nsc) :: sigmaCyl
+ 
+        call calcDevStress(stress, sigmaDev, sigmaHyd)
+        sigmaCyl(3) = sigmaHyd
+ 
+        call sprinc(sigmaDev, princDev, 1, ndi, nshr)
+ 
+        !The J2 equivalent stress of the vector of principal stresses of the 
+        !stress deviator is computed (Eq. 3)
+        sigmaCyl(1) = sqrt( 0.5*((princDev(1)-princDev(2))**2 +                &
+        &                        (princDev(2)-princDev(3))**2 +                &
+        &                        (princDev(3)-princDev(1))**2))
+ 
+        call calcThetaDev(stress, thetaDev)
+        sigmaCyl(2) = thetaDev
+ 
+    end subroutine calcCylStress
+    
+    subroutine calcPrincStress(sigmaCyl, stress)
+        ! convert cylindrical stresses into principal stresses
+        implicit none
+        real(8), dimension(ntens) :: stress
+        real(8), dimension(nsc) :: sigmaCyl
+        real(8) :: theta, hh, cs 
+        integer :: i 
+    
+        theta = sigmaCyl(2)
+        cs = sqrt(2./3.)
+        stress=0.
+        do i=1,ndi
+            hh  = cos(theta)*a_vec(i) + sin(theta)*b_vec(i)
+            stress(i) = hh*cs*sigmaCyl(1) + sigmaCyl(3)
+        end do
+    end subroutine calcPrincStress
     
     subroutine calcEqStrain(eps, eeq)
         !calculate equivalent strain from Voigt strain tensor
@@ -383,78 +477,127 @@ end
         eeq = sqrt((2.d0*hdi+hsh)/3.)
     end subroutine calcEqStrain
  
-    subroutine calcKernelFunction(sigma, supportVector, kernelFunc)
+    subroutine calcKernelFunction(sigmaCyl, supportVector, kernelFunc)
     !This subroutine calculates the Radial Basis Function (RBF) kernel of the
     !svc (Eq. 19)
         implicit none
-        real(8), dimension(nsd) :: sigma, supportVector
-        real(8) :: kernelFunc, hh, hs
-        integer :: i
+        real(8), dimension(nsc) :: sigmaCyl
+        real(8), dimension(2) :: supportVector, hs
+        real(8) :: kernelFunc, hh
         
-        hh = 0.
-        do i=1,nsd
-            hs = sigma(i)/scale_seq - supportVector(i)
-            hh = hh + hs*hs
-        end do
+        hs(1) = sigmaCyl(1)/scale_seq - 1. - supportVector(1)
+        hs(2) = sigmaCyl(2)/pi - supportVector(2)
+        hh = hs(1)*hs(1) + hs(2)*hs(2)
         kernelFunc = exp(-lambda*hh)
     end subroutine calcKernelFunction
-  
-    subroutine calcFSVC(sigma, fsvc)
+ 
+ 
+    subroutine calcDK_DS(sigmaCyl, supportVector, dk_ds)
+    !This subroutine calculates the derivative of the kernel basis function
+    !with respect to the cylindrical stress vector (Eq. 21)
+        implicit none
+        real(8), dimension(nsc) :: sigmaCyl
+        real(8), dimension(2)  :: supportVector
+        real(8) :: kernelFunc, dk_ds
+ 
+        call calcKernelFunction(sigmaCyl, supportVector, kernelFunc)
+        dk_ds = -2.*lambda*kernelFunc*(sigmaCyl(2) - supportVector(2))
+    end subroutine calcDK_DS
+ 
+ 
+    subroutine calcFSVC(stress, sigmaCyl, flag, fsvc)
     !This subroutine computes the decision function F (Eq. 18)
     !based on the trained Support Vector Classification (SVC)
         implicit none
         integer :: i
-        real(8), dimension(ntens) :: sigma, sdev
-        real(8), dimension(5) :: hs
+        real(8), dimension(ntens) :: stress
+        real(8), dimension(nsc) :: sigmaCyl
         real(8) :: fsvc, kernelFunc
+        integer :: flag
  
+        if (flag.eq.0) then
+           call calcCylStress(stress, sigmaCyl)
+        end if
         fsvc = 0.
         do i=1, nsv
-            call calcDevStress(sigma, sdev)
-            hs = sdev(2:6) ! first stress component is disregarded in deviatoric stress space
-            call calcKernelFunction(hs, supportVectors(i, :), kernelFunc)
+            call calcKernelFunction(sigmaCyl, supportVectors(i, :), kernelFunc)
             fsvc = fsvc + dual_coeffs(i)*kernelFunc
-            !print*,i,fsvc, dual_coeffs(i)
+            !print*,i,supportVectors(i,1:2), dual_coeffs(i)
         end do
         fsvc = fsvc + rho
     end subroutine calcFSVC
  
-    subroutine calcDK_DS(sigd, supportVector, dk_ds)
-    !This subroutine calculates the derivative of the kernel basis function
-    !with respect to the cylindrical stress vector (Eq. 21)
-        implicit none
-        real(8), dimension(nsd) :: sigd, supportVector, dk_ds
-        real(8) :: kernelFunc
  
-        call calcKernelFunction(sigd, supportVector, kernelFunc)
-        do i=1,nsd
-            dk_ds(i) = -2.*lambda*kernelFunc*(sigd(i) - supportVector(i))
-        end do
-    end subroutine calcDK_DS
-
-    subroutine calcGradFSVC(sigma, dfds)
-    !This subroutine calculates the gradient of the decision function w.r.t. the stress
+    subroutine calcDfsvcds(sigmaCyl, stress, dfds)
+    !This subroutine calculates the derivative of the decision function w.r.t.
+    !principal stress
         implicit none
         integer :: i
-        real(8), dimension(ntens) :: sigma, sdev, dfds
-        real(8), dimension(nsd) :: hs, dk_ds, hg
+        real(8), dimension(nsc) :: sigmaCyl
+        real(8), dimension(ntens) :: stress
+        real(8), dimension(3) :: dfds
+        real(8), dimension(3,3) :: jac
+        real(8) :: dfsvc, dk_ds
  
-        call calcDevStress(sigma, sdev)
-        hs = sdev(2:6) ! first stress component is disregarded in deviatoric stress space
         ! calculate derivative w.r.t. cylindrical stress
-        hg = 0.
+        dfsvc = 0.
         do i=1, nsv
-            call calcDK_DS(hs, supportVectors(i, :), dk_ds)
-            hg = hg + dual_coeffs(i)*dk_ds
+            call calcDK_DS(sigmaCyl, supportVectors(i, :), dk_ds)
+            dfsvc = dfsvc + dual_coeffs(i)*dk_ds
         end do
-        dfds(2:6) = hg
-        dfds(1) = -hg(1) - hg(2)
-    end subroutine calcGradFSVC
+        
+        ! multiply with Jacobian to get gradient in princ. stress space
+        call CalcJac(sigmaCyl, stress, jac)
+        do i=1,3
+            dfds(i) = jac(i,1) + jac(i,2)*dfsvc
+        end do
+    end subroutine calcDfsvcds
+ 
+ 
+    subroutine calcJac(sigmaCyl, stress, jac)
+    !This subroutine calculates the jacobian of the coordinate transformation
+    !from cylindrical into princ. stress space
+        implicit none
+        real(8), dimension(nsc) :: sigmaCyl
+        real(8), dimension(ntens) :: stress, sdev
+        real(8), dimension(3,3) :: jac
+        real(8) :: sigmaHyd, vn
+        real(8), dimension(3) :: dseqds, dsa, dsb, sp
+        complex :: sc, z
+        integer :: i
+
+        call calcDevStress(stress, sdev, sigmaHyd)
+        call sprinc(stress, sp, 1, ndi, nshr)
+        vn = 0.
+        do i=1,ntens
+            vn = vn + sdev(i)*sdev(i)
+        end do
+        vn = sqrt(1.5*vn)   !norm of stress vector
+        if (vn.gt.0.1) then
+           !only calculate Jacobian if sig>0
+            dseqds = 3.*sdev(1:3)/vn
+            jac(:,1) = dseqds
+            dsa = 0.
+            dsb = 0.
+            do i=1,3
+                dsa = dsa + sp(i)*a_vec(i)
+                dsb = dsb + sp(i)*b_vec(i)
+            end do
+            do i=1,3
+                sc = cmplx(dsa(i), dsb(i))
+                !z = (0.,-1.)*(cmplx(a_vec(i), b_vec(i))/sc - dseqds/vn)
+                z = (0., -1.)*(cmplx(a_vec(i), b_vec(i))/sc - dseqds(i)/vn)
+                jac(i,2) = real(z)
+            end do
+            jac(:,3)=1.d0/3.d0
+        end if
+    end subroutine calcJac
+ 
  
     subroutine calcFlow(dfsvc, deps, Ct, eplas, flow)
     !This subroutine calculates the flow vector N (Eq. 6 and Eq. 16)
         implicit none
-        real(8), dimension(ntens) :: dfsvc
+        real(8), dimension(3) :: dfsvc
         real(8), dimension(ntens) :: deps, eplas, flow
         real(8), dimension(ntens, ntens) :: Ct
         real(8) :: hh, l_dot
@@ -462,27 +605,29 @@ end
  
         hh = 0.
         l_dot = 0.
-        do i=1,ntens
-            do j=1,ntens
+        do i=1,3
+            do j=1,3
                 hh = hh + dfsvc(i)*Ct(i,j)*dfsvc(j)
                 ! add hardening term  + 4.*self.Hpr
             end do
         end do
-        do i=1,ntens
-            do j=1,ntens
+        do i=1,3
+            do j=1,3
                 l_dot = l_dot + dfsvc(i) * Ct(i,j) * deps(j) / hh  ! deps must not contain elastic strain components
             end do
         end do
         flow = l_dot * dfsvc 
     end subroutine calcFlow
-     
+ 
+    
     subroutine calcTangStiff(Cel, dfds, Ct)
     !This subroutine calculates the elasto-plastic tangent stiffness matrix 
     !(Eq. 9)
         implicit none
         real(8), dimension(ntens, ntens) :: Cel, Ct
-        real(8), dimension(ntens) :: dfds
+        real(8), dimension(3) :: dfds
         real(8), dimension(ntens) :: ca
+        real(8), dimension(ntens, ntens) :: C_temp
         real(8) :: hh
         integer :: i, j
 
@@ -502,77 +647,76 @@ end
         end do
     end subroutine calcTangStiff
  
-    subroutine findRoot(sigma, s_fl)
+ 
+    subroutine findRoot(sigmaCyl, s_fl, fsvc)
     !This subroutine implements the bisection method for finding the root of the
-    !yield function by proportional variations of the given stress sigma
+    !decision rule function
         implicit none
-        real(8), dimension(ntens) :: sigma, s_fl
-        
+ 
         integer :: i, j
+        real(8), dimension(nsc) :: sigmaCyl
+        real(8), dimension(ntens) :: s_fl
         real(8) :: fsvc, error
+ 
         real(8) :: lowerBound, upperBound, increment
-        real(8), dimension(ntens) :: sunit
+        real(8), dimension(ntens) :: sdum
         integer, parameter :: split = 10
-        integer, parameter :: nmax = 100
-        !real(8), dimension(nsd, split) :: storage
+        real(8), dimension(2, split) :: storage
         real(8) :: a, b, fsvca, fsvcb, root, fsvcAtroot, seq0
  
-        call calcFSVC(sigma, fsvca)
+        sdum = 0.
+        call calcFSVC(sdum, sigmaCyl, -1, fsvca)
+ 
         if (fsvca .le. tol) then
             return
         else
             !An initial broad interval is split into split subintervals and a change
             !in the sign of fsvc is sought. The first subinterval meeting this 
-            !criterion will be used for the bisection root finding procedure
-            ! It is assumed that the fSVC value at sigma is positive turning negative at 
+            !criterial will be used for the bisection root finding procedure
+            ! It is assumed that the fSVC value at sigmaCyl is positive turning negative at 
             ! smaller stresses
-            call calcEqStress(sigma, seq0)
-            sunit = sigma/seq0
+            seq0 = sigmaCyl(1)
             upperBound = seq0
             a = upperBound
             lowerBound = 0.9*seq0
-            b = lowerBound
-            increment = lowerBound/split
+            call calcFSVC(sdum, sigmaCyl, -1, fsvcb)
             
-            s_fl = sunit*b
-            call calcFSVC(s_fl, fsvcb)
+            increment = lowerBound/split
             j = 1
-            do while ((fsvca*fsvcb.gt.0.).and.(j.le.split))
+            do while ((fsvca*fsvcb .gt. 0.).or.(j.eq.split))
                 b = lowerBound - j*increment
-                s_fl = sunit*b
-                call calcFSVC(s_fl, fsvcb)
+                sigmaCyl(1) = b
+                call calcFSVC(sdum, sigmaCyl, -1, fsvcb)
                 j = j + 1
             end do 
-            ! b is now the factor for the largest stress with negative yield function
-            ! now look for smallest upper bracket a
             increment = (a-b)/split
             j = 1
-            !s_fl = sunit*a
-            do while ((fsvca*fsvcb .lt. 0.).and.(j.lt.split))
+            sigmaCyl(1) = a
+            do while ((fsvca*fsvcb .lt. 0.).or.(j.eq.split))
                 a = upperBound - j*increment
-                s_fl = sunit*a
-                call calcFSVC(s_fl, fsvca)
+                sigmaCyl(1) = a
+                call calcFSVC(sdum, sigmaCyl, -1, fsvca)
                 j = j + 1
             end do 
             a = a + increment
-            !s_fl = sunit*a
-            !call calcFSVC(s_fl, fsvca)
+            sigmaCyl(1) = a
+            call calcFSVC(sdum, sigmaCyl, -1, fsvca)
  
             i = 1
             error = 1.
-            do while ((i.lt.nmax).and.(error.ge.threshold))
+            do while ((i .lt. nmax) .and. (error .ge. 0.5))
                 !Calculating fsvc at the bounds of the interval
-                s_fl = sunit*a
-                call calcFSVC(s_fl, fsvca)
+                sigmaCyl(1) = a
+                call calcFSVC(sdum, sigmaCyl, -1, fsvca)
  
-                s_fl = sunit*b
-                call calcFSVC(s_fl, fsvcb)
+                sigmaCyl(1) = b
+                call calcFSVC(sdum, sigmaCyl, -1, fsvcb)
  
                 !Checking if the root is bracketed within the interval
                 if (fsvca*fsvcb .lt. 0.) then
                     root = (a+b)/2.
-                    s_fl = sunit*root
-                    call calcFSVC(s_fl, fsvcAtroot)
+                    sigmaCyl(1) = root
+                    call calcFSVC(sdum, sigmaCyl, -1, fsvcAtroot)
  
                     if (fsvca*fsvcAtroot .lt. 0.) then
                         b = root
@@ -589,13 +733,18 @@ end
                 error = abs(fsvcAtroot)
             end do
             if (abs(fsvca).lt.error) then
-                s_fl = sunit*a
+                sigmaCyl(1) = a
             end if
             if (abs(fsvcb).lt.error) then
-                s_fl = sunit*b
+                sigmaCyl(1) = b
             end if
+            ! scale hydrostatic stress according to equiv. stress
+            sigmaCyl(3) = sigmaCyl(3)*sigmaCyl(1)/seq0
+            call calcPrincStress(sigmaCyl, s_fl)
         end if 
+ 
     end subroutine findRoot
+ 
  
     subroutine uhard(syield, hard, eqplas, eqplasrt, time, dtime, temp, dtemp, &
     &                noel, npt, layer, kspt, kstep, kinc, cmname, nstatv,      &

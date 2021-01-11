@@ -5,7 +5,7 @@ module pylabfea.material
 
 uses NumPy, SciPy, MatPlotLib
 
-Version: 3.2 (2020-10-26)
+Version: 3.3 (2021-01-09)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, April 2020
 Email: alexander.hartmaier@rub.de
 distributed under GNU General Public License (GPLv3)'''

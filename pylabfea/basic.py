@@ -6,7 +6,7 @@ for efficient operations with these quantities.
 
 uses NumPy
 
-Version: 3.2 (2020-10-26)
+Version: 3.3 (2021-01-09)
 Author: Alexander Hartmaier, ICAMS/Ruhr-University Bochum, April 2020
 Email: alexander.hartmaier@rub.de
 distributed under GNU General Public License (GPLv3)'''
@@ -29,7 +29,7 @@ a_vec = np.array([1., -0.5, -0.5])/np.sqrt(1.5)
 '''First unit vector spanning deviatoric stress plane (real axis)'''
 b_vec = np.array([0.,  0.5, -0.5])*np.sqrt(2)  
 '''Second unit vector spanning deviatoric stress plane (imaginary axis)'''
-ptol = 3.e-3
+ptol = 5.e-3
 '''Tolerance: Plastic yielding if yield function > ptol'''
 def seq_J2(sig):
     '''Calculate J2 equivalent stress from any stress tensor
@@ -189,7 +189,7 @@ def sprinc(sig):
     return spa, eva
 
 def sp_cart(scyl):
-    '''Convert cylindrical stress into 3D Cartesian vector of deviatoric principle stresses 
+    '''Convert cylindrical stress into 3D Cartesian principle stress
     
     Parameters
     ----------
@@ -211,7 +211,7 @@ def sp_cart(scyl):
              *np.sqrt(2./3.)*np.array([seq,seq,seq]).T
     if sh[0]==3:
         p = scyl[:,2]
-        sprinc += np.array([p,p,p]).T
+        sprinc += np.array([p,p,p]).T/3.
     if sh==(2,) or sh==(3,):
         sprinc=sprinc[0]
     return sprinc
